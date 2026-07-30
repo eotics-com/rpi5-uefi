@@ -1,141 +1,155 @@
-Thanks to Mario Bălănică for the work enabling UEFI support on the Raspberry Pi 5. This project aims to provide UEFI access for users with D0 models—including the 16 GB, 2 GB, and other recently manufactured variants—as well as all Compute Modules.
-
-This fork remaps pinctrl for the D0 revision of the BCM2712, ensuring newer Pi 5 boards boot correctly with UEFI. There is currently a known framebuffer issue affecting the UEFI menu and some operating systems on these models. I’ve reported this issue to the Raspberry Pi Foundation, and they have confirmed it will be addressed in their next major EEPROM update. 
-
-UPDATE:  Upgrade your system in Raspberry Pi OS or manually to the 6/9/25 EEPROM to avoid framebuffer issues.
-
-My continued involvement in this project depends on community participation. I’m motivated to improve ACPI compatibility and other features if others contribute, but won’t be able to maintain or add features alone.
-
-Dt-bindings are being released for the RP1 within the coming months so we may be able to get ethernet and some other features working.  I have a CM5 and I would eventually like to get eMMC to work properly, but for now CM5 users should boot from NVME or USB.
-
 # Raspberry Pi 5 UEFI
-This repository contains a TF-A + EDK2 UEFI firmware port for Raspberry Pi 5.
 
-![EDK2 Setup Screen](images/edk2_setup_screen.png)
+TF-A and EDK2 firmware for the Raspberry Pi 5 and Compute Module 5, including
+boards based on the BCM2712 D0 revision.
 
-# Getting started
-Check the [Supported OSes](#supported-oses) and [Supported peripherals in UEFI](#supported-peripherals-in-uefi) sections to see what's currently possible with this firmware.
+![EDK2 setup screen](images/edk2_setup_screen.png)
 
-## 1. Prerequisites
-* #### SD card, USB or NVME drive to store the firmware and/or operating system on
+## Project lineage
 
-  **Note:** For OS, it is highly suggested to use a quality drive with **good random I/O performance**. In SD terms this means an A1/A2-rated card.
-  
-* #### Quality power supply and cable that can provide at least 5V 3A (15 W)
-  Depending on the peripherals you use, more power may be needed. The recommended official power supply provides 5.1V 5A (25 W).
+This repository is the second continuation of the original Raspberry Pi 5 UEFI
+work:
 
-  **Note:** Using an inadequate supply can cause all sorts of issues, from underclocking to random crashes.
+- [Mario Bălănică](https://github.com/worproject) created the original port,
+  including the early platform, ACPI, USB, SD, PCIe, RTC and display support.
+- [Matt P](https://github.com/NumberOneGit) carried it forward for BCM2712 D0
+  boards and CM5, fixed the changed pin control and UART/display setup, and kept
+  it building with newer EDK2 revisions.
+- This fork rebases that work on current upstream firmware projects and extends
+  the ACPI hand-off for RP1 Ethernet and USB, SDIO Wi-Fi, microSD and
+  VideoCore VII.
 
-* #### HDMI display
+Thank you to Mario and Matt. This branch exists because of the work they did
+first.
 
-* #### Some form of cooling (fan, heatsink)
-  The device may thermal throttle otherwise.
+## What is new in this branch
 
-Optionally, if display is not available or for debugging purposes, an UART serial adapter compatible with the special connector. Configuration is `115200 8n1`.
+- The four firmware dependencies are rebased on their current upstream
+  `master` branches and published as matching `rpi5` branches.
+- RP1 Ethernet and USB are initialized before the OS starts. ACPI describes the
+  devices and the firmware supplies the board MAC address.
+- ACPI now describes the Wi-Fi SDIO host, its power control, and VideoCore VII.
+- The OS owns microSD slot power through an ACPI power resource. The EDK2 SD
+  host also has the BCM2712 signaling-voltage override needed for UHS modes.
+- FreeLoader is recognized during ACPI hand-off so ReactOS receives the
+  Windows-compatible PCIe layout.
+- `build.sh` works on Linux and macOS. CI builds both Debug and Release images
+  and records the exact revisions and SHA-256 hashes used for each release.
 
-## 2. Download the firmware image
-The latest version can be obtained from [Releases](https://github.com/NumberOneGit/rpi5-uefi/releases).
+## Current status
 
-## 3. Flash the firmware
-Prepare an empty boot drive by formatting the first partition as FAT32, then extract the archive downloaded above to the root of this partition.
+“Working after OS hand-off” means the firmware initializes and describes the
+hardware, while the operating system still needs a suitable driver.
 
-**Note:** do not rename or delete any of the boot files.
-
-## 4. Connect peripherals and power on the device
-You should first see a QR code screen, then shortly after, a centered Raspberry Pi logo with progress bar at the bottom. This indicates that the UEFI firmware has loaded.
-
-At this stage, you can press <kbd>Esc</kbd> to enter the firmware setup, <kbd>F1</kbd> to launch the UEFI Shell, or, provided you also have an UEFI bootloader/app on a storage device, you can let the system automatically run that, which is the default behavior if no action is taken.
-
-Check the configuration options described below, some of which may need to be changed depending on the OS used.
-
-# Configuration settings
-The UEFI provides options that can be viewed and changed using the UI configuration menu.
-
-Configuration through the user interface is fairly straightforward and help/navigation information is provided around the menus.
-
-## PCI Express
-The PCIe connector is limited to Gen 2 speed by default. For other modes, go to `Device Manager`->`Raspberry Pi Configuration`->`PCI Express` and change `Link Speed`.
-
-> [!NOTE]
-> Raspberry Pi 5 is not officially rated for PCIe Gen 3. Some devices and adapters may run into reliability issues at this speed, either due to signal integrity or insufficient power.
-
-## Linux
-* If you're getting a Synchronous Exception when booting certain distros, go to `Device Manager`->`EFI Memory Attribute Protocol` and untick `Enable Protocol`.
-
-* For maximum SD card performance, go to `Device Manager`->`Raspberry Pi Configuration`->`ACPI / Device Tree` and set `Compatibility Mode` to `Full Bay Trail`, then untick `Limit UHS-I Modes`.
-
-  **Warning:** this may affect other OSes!
-
-* To enable PCIe support, go to `Device Manager`->`Raspberry Pi Configuration`->`ACPI / Device Tree` and change `ECAM Compatibility Mode` to `AMAZON GRAVITON`.
-
-* If you're running the RPi downstream kernel, enabling Device Tree instead of ACPI will provide better hardware support. To do so, go to `Device Manager`->`Raspberry Pi Configuration`->`ACPI / Device Tree` and change `System Table Mode`.
-
-# Status
-
-## Supported OSes
-### In ACPI mode
-ACPI support is currently under development and limited to a few devices that have existing driver bindings.
-
-| OS | Version | Tested/supported hardware | Notes |
-| --- | --- | --- | --- |
-| Windows | 11 (including insider) | Display, USB, SD, SDIO, PCIe | * SD is limited to DDR50.<br> * PL011 UART driver fails to start, but debugging over it still works via DBG2.<br> * PCIe is limited to single-function devices. |
-| Linux | tested Ubuntu 22.04, kernel 5.15.0-75-generic | Display, UART, USB, SD, SDIO (incl. Wi-Fi), PCIe | * SD is limited to HS by default.<br> * Wi-Fi may require manual firmware installation.<br> * PCIe is limited to single-function devices; needs to be enabled manually.<br> See [Configuration settings - Linux](#Linux). |
-| FreeBSD | 13.2 | Display, UART, USB, SD, PCIe | * SD is limited to HS. |
-| NetBSD | recent daily build | Display, UART, USB, PCIe | * SD fails to communicate with the card. |
-| VMware ESXi Arm Fling | 1.15 | Display, UART, USB, PCIe | * Requires compatible USB network adapter. |
-
-### In Device Tree mode
-The included DTB is meant for the RPi downstream 6.1.y kernel.
-
-## Supported peripherals in UEFI
-> [!NOTE]
-> Only devices relevant to the firmware itself (not OS) are listed below.
-
-| Device | Status | Notes |
+| Area | Status | Notes |
 | --- | --- | --- |
-| RP1 USB                            | 🟢 Working     | |
-| RP1 Ethernet                       | 🔴 Not working | |
-| RP1 GPIO                           | 🔴 Not working | |
-| RP1 PWM                            | 🔴 Not working | Fan control |
-| PCIe                               | 🟢 Working     | |
-| SD                                 | 🟢 Working     | SD cards up to SDR104. eMMC support is unknown. |
-| Display                            | 🟢 Working     | HDMI, driven by the VPU firmware. |
-| UART                               | 🟢 Working     | PL011 available on the dedicated connector at 115200 8n1. |
-| GPIO                               | 🟢 Working     | GIO/AON, pin function. |
-| RTC                                | 🟢 Working     | Get/set time, wake up alarm. |
-| RNG                                | 🟢 Working     | |
-| EEPROM                             | 🔴 Not working | Needed for proper NVRAM. |
+| UEFI setup and boot | Working | Raspberry Pi 5 and CM5, including D0 boards. |
+| HDMI framebuffer | Working | Display is provided by the VideoCore firmware. Use a current Raspberry Pi EEPROM on D0 boards. |
+| RP1 USB | Working | Both xHCI controllers are initialized and exposed through ACPI. |
+| PCIe and NVMe | Working | Gen 2 is the default; Gen 3 can be selected in setup. |
+| microSD | Working | UEFI supports modes up to SDR104. ACPI power and voltage switching are included; the final speed depends on the OS driver. |
+| RP1 Ethernet | **Working after OS hand-off** | The GEM/PHY is initialized, the MAC address is programmed, and ACPI exposes a Cadence GEM-compatible device. A matching OS driver is required; UEFI PXE is not provided. |
+| SDIO Wi-Fi | Partial | The host and power resource are described in ACPI. The OS still needs the CYW43455 driver and firmware. |
+| VideoCore VII | Partial | Mailbox, clock and memory resources are described in ACPI. 3D acceleration remains an OS-driver concern. |
+| UART | Working | PL011 on the dedicated connector at `115200 8n1`. |
+| RTC and RNG | Working | RTC time/alarm and the hardware random-number source are available. |
+| CM5 eMMC | Not confirmed | Use NVMe or USB when dependable eMMC boot is required. |
+| RP1 GPIO and PWM | Not exposed | There are no general-purpose ACPI devices for these blocks yet. |
+| Persistent UEFI variables | Limited | EEPROM-backed NVRAM is not implemented. |
 
-## Building
-This process assumes a Linux machine. On Windows, use WSL.
+ACPI support depends on the drivers available in the operating system. Device
+Tree mode remains the best choice for the Raspberry Pi downstream Linux kernel
+when full native hardware support is more important than a generic ACPI boot.
 
-1. Install required packages:
+## Install
 
-   For Ubuntu/Debian:
-   ```bash
-   sudo apt install git gcc g++ build-essential gcc-aarch64-linux-gnu iasl python3-pyelftools uuid-dev
-   ```
-   For Arch Linux:
-   ```bash
-   sudo pacman -Syu
-   sudo pacman -S git base-devel gcc dtc aarch64-linux-gnu-binutils aarch64-linux-gnu-gcc aarch64-linux-gnu-glibc python python-pyelftools iasl --needed
-   ```
+You need:
 
-2. Clone the repository:
-   ```bash
-   git clone --recurse-submodules https://github.com/NumberOneGit/rpi5-uefi.git
-   cd rpi5-uefi
-   ```
+- a FAT32-formatted SD card, USB drive or NVMe drive;
+- a reliable power supply and cable (the official 27 W supply is recommended);
+- cooling for sustained workloads;
+- optionally, a 3.3 V UART adapter for serial output.
 
-3. Build the image:
-   ```bash
-   ./build.sh
-   ```
-   Append `--help` for more details.
+Download the latest archive from
+[Releases](https://github.com/eotics-com/rpi5-uefi/releases), then extract it to
+the root of the FAT32 boot partition. Keep the filenames and directory layout
+unchanged.
 
-If you get build errors, it is very likely that you're still missing some dependencies. The list of packages above is not complete and depending on the distro you may need to install additional ones. In most cases, looking up the error messages on the internet will point you at the right packages.
+On power-up, the Raspberry Pi boot screen is followed by the EDK2 logo. Press
+<kbd>Esc</kbd> for setup or <kbd>F1</kbd> for the UEFI Shell.
+
+## Configuration
+
+### PCI Express
+
+The external PCIe link defaults to Gen 2. Change it under
+`Device Manager` → `Raspberry Pi Configuration` → `PCI Express` → `Link Speed`.
+
+Raspberry Pi does not rate the board for PCIe Gen 3. Whether it is reliable
+depends on the adapter, cabling, device and power supply.
+
+### Linux
+
+- If a distribution stops with a synchronous exception, disable
+  `Device Manager` → `EFI Memory Attribute Protocol` → `Enable Protocol`.
+- For faster SD modes, select `Full Bay Trail` under
+  `Raspberry Pi Configuration` → `ACPI / Device Tree` → `Compatibility Mode`,
+  then disable `Limit UHS-I Modes`. This can reduce compatibility with other
+  operating systems.
+- If PCIe is not detected, set `ECAM Compatibility Mode` to
+  `AMAZON GRAVITON`.
+- For the Raspberry Pi downstream kernel, set `System Table Mode` to
+  `Device Tree`.
+
+## Build
+
+Clone the `rpi5` branch with all submodules:
+
+```sh
+git clone --branch rpi5 --recurse-submodules \
+  https://github.com/eotics-com/rpi5-uefi.git
+cd rpi5-uefi
+```
+
+On Ubuntu or Debian:
+
+```sh
+sudo apt install \
+  acpica-tools binutils-aarch64-linux-gnu build-essential \
+  device-tree-compiler gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+  python3 python3-pyelftools uuid-dev
+```
+
+On Arch Linux:
+
+```sh
+sudo pacman -S --needed \
+  aarch64-linux-gnu-binutils aarch64-linux-gnu-gcc \
+  aarch64-linux-gnu-glibc base-devel dtc git iasl python \
+  python-pyelftools
+```
+
+On macOS, install an `aarch64-elf-` GCC toolchain plus GNU Make, GNU sed, IASL,
+the device-tree compiler and Python with pyelftools. `build.sh` detects
+Homebrew's `gmake` and GNU sed automatically.
+
+Build a Release image:
+
+```sh
+./build.sh
+```
+
+Build a Debug image:
+
+```sh
+./build.sh --debug 1
+```
+
+The result is `RPI_EFI.fd`. Run `./build.sh --help` for the remaining options.
 
 ## Licenses
-Most files are licensed under the default EDK2 license, [BSD-2-Clause-Patent](https://github.com/tianocore/edk2/blob/master/License.txt).
 
-For TF-A, see: <https://github.com/ARM-software/arm-trusted-firmware/blob/master/docs/license.rst>
+Most files use the EDK2
+[BSD-2-Clause-Patent license](https://github.com/tianocore/edk2/blob/master/License.txt).
+TF-A uses its
+[upstream license](https://github.com/ARM-software/arm-trusted-firmware/blob/master/docs/license.rst).
