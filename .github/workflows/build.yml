@@ -15,6 +15,13 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   RPI_FIRMWARE_URL: https://github.com/raspberrypi/firmware/
   DTB_VERSION: 1e403e23baab5673f0494a200f57cd01287d5b1a
