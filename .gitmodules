@@ -1,16 +1,16 @@
 [submodule "arm-trusted-firmware"]
 	path = arm-trusted-firmware
-	url = https://github.com/ARM-software/arm-trusted-firmware.git
+	url = https://github.com/eotics-com/arm-trusted-firmware.git
 	branch = rpi5
 [submodule "edk2"]
-        path = edk2
-        url = https://github.com/NumberOneGit/edk2.git
-        branch = master
+	path = edk2
+	url = https://github.com/eotics-com/edk2.git
+	branch = rpi5
 [submodule "edk2-platforms"]
 	path = edk2-platforms
-	url = git@github.com:eotics-com/edk2-platforms.git
-	branch = master
+	url = https://github.com/eotics-com/edk2-platforms.git
+	branch = rpi5
 [submodule "edk2-non-osi"]
 	path = edk2-non-osi
-	url = https://github.com/NumberOneGit/edk2-non-osi.git
-	branch = master
+	url = https://github.com/eotics-com/edk2-non-osi.git
+	branch = rpi5
