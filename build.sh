@@ -136,7 +136,7 @@ EDK2_PLATFORMS_FAN_PATCH_APPLIED=0
 
 restore_edk2_sd_patch() {
     if [[ "${EDK2_PLATFORMS_FAN_PATCH_APPLIED}" -eq 1 ]]; then
-        git -C "${WORKSPACE}/edk2-platforms" apply --reverse "${EDK2_PLATFORMS_FAN_PATCH}"
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --reverse "${EDK2_PLATFORMS_FAN_PATCH}"
         echo "Restored clean edk2-platforms worktree"
     fi
     if [[ "${EDK2_SD_PATCH_APPLIED}" -eq 1 ]]; then
@@ -158,14 +158,15 @@ if [[ "${MODEL}" == "5" ]]; then
         exit 1
     fi
 
-    if git -C "${WORKSPACE}/edk2-platforms" apply --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
-        git -C "${WORKSPACE}/edk2-platforms" apply "${EDK2_PLATFORMS_FAN_PATCH}"
+    if git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change "${EDK2_PLATFORMS_FAN_PATCH}"
         EDK2_PLATFORMS_FAN_PATCH_APPLIED=1
         echo "Applied experimental RPi5 fail-safe fan patch"
-    elif git -C "${WORKSPACE}/edk2-platforms" apply --reverse --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
+    elif git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --reverse --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
         echo "Experimental RPi5 fail-safe fan patch is already applied"
     else
         echo "Experimental RPi5 fan patch does not apply to this edk2-platforms revision" >&2
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --check --verbose "${EDK2_PLATFORMS_FAN_PATCH}" >&2 || true
         exit 1
     fi
 fi
