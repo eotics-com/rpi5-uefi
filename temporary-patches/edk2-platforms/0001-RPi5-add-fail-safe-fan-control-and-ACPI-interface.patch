@@ -1,0 +1,1006 @@
+diff --git a/Platform/RaspberryPi/Drivers/RpiFirmwareDxe/RpiFirmwareDxe.c b/Platform/RaspberryPi/Drivers/RpiFirmwareDxe/RpiFirmwareDxe.c
+index e248e7e62ecb6c6519c647ad1c6d09003490fc08..ef9b89c6e3c206ad4a4c105733cadd6b93b49bb0 100644
+--- a/Platform/RaspberryPi/Drivers/RpiFirmwareDxe/RpiFirmwareDxe.c
++++ b/Platform/RaspberryPi/Drivers/RpiFirmwareDxe/RpiFirmwareDxe.c
+@@ -1423,6 +1423,71 @@ RpiFirmwareSetRtc (
+   return Status;
+ }
+ 
++#pragma pack(push, 1)
++typedef struct {
++  RPI_FW_BUFFER_HEAD  BufferHead;
++  RPI_FW_TAG_HEAD     TagHead;
++  UINT32              SensorId;
++  UINT32              Value;
++  UINT32              EndTag;
++} RPI_FW_GET_TEMPERATURE_CMD;
++#pragma pack(pop)
++
++STATIC
++EFI_STATUS
++EFIAPI
++RpiFirmwareGetTemperature (
++  OUT UINT32  *MilliCelsius
++  )
++{
++  RPI_FW_GET_TEMPERATURE_CMD  *Cmd;
++  EFI_STATUS                  Status;
++  UINT32                      Result;
++
++  if (MilliCelsius == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  if (!AcquireSpinLockOrFail (&mMailboxLock)) {
++    DEBUG ((DEBUG_ERROR, "%a: failed to acquire spinlock\n", __func__));
++    return EFI_DEVICE_ERROR;
++  }
++
++  Cmd = mDmaBuffer;
++  ZeroMem (Cmd, sizeof (*Cmd));
++  Cmd->BufferHead.BufferSize = sizeof (*Cmd);
++  Cmd->TagHead.TagId         = RPI_MBOX_GET_TEMPERATURE;
++  Cmd->TagHead.TagSize       = sizeof (Cmd->SensorId) + sizeof (Cmd->Value);
++  Cmd->SensorId              = 0;
++
++  Status = MailboxTransaction (
++             Cmd->BufferHead.BufferSize,
++             RPI_MBOX_VC_CHANNEL,
++             &Result
++             );
++  if (EFI_ERROR (Status) ||
++      (Cmd->BufferHead.Response != RPI_MBOX_RESP_SUCCESS) ||
++      ((Cmd->TagHead.TagValueSize & RPI_MBOX_VALUE_SIZE_RESPONSE_MASK) == 0) ||
++      (Cmd->Value > 150000))
++  {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a: invalid mailbox temperature response: Status=%r Response=0x%x TagSize=0x%x Value=%u\n",
++      __func__,
++      Status,
++      Cmd->BufferHead.Response,
++      Cmd->TagHead.TagValueSize,
++      Cmd->Value
++      ));
++    Status = EFI_DEVICE_ERROR;
++  } else {
++    *MilliCelsius = Cmd->Value;
++  }
++
++  ReleaseSpinLock (&mMailboxLock);
++  return Status;
++}
++
+ STATIC RASPBERRY_PI_FIRMWARE_PROTOCOL mRpiFirmwareProtocol = {
+   RpiFirmwareSetPowerState,
+   RpiFirmwareGetMacAddress,
+@@ -1446,6 +1511,7 @@ STATIC RASPBERRY_PI_FIRMWARE_PROTOCOL mRpiFirmwareProtocol = {
+   RpiFirmwareNotifyGpioSetCfg,
+   RpiFirmwareGetRtc,
+   RpiFirmwareSetRtc,
++  RpiFirmwareGetTemperature,
+ };
+ 
+ STATIC
+@@ -1460,6 +1526,7 @@ RpiFirmwareVirtualAddressChangeNotify (
+   EfiConvertPointer (0x0, (VOID **)&mDmaBuffer);
+   EfiConvertPointer (0x0, (VOID **)&mRpiFirmwareProtocol.GetRtc);
+   EfiConvertPointer (0x0, (VOID **)&mRpiFirmwareProtocol.SetRtc);
++  EfiConvertPointer (0x0, (VOID **)&mRpiFirmwareProtocol.GetTemperature);
+ }
+ 
+ /**
+diff --git a/Platform/RaspberryPi/Include/Protocol/RpiFirmware.h b/Platform/RaspberryPi/Include/Protocol/RpiFirmware.h
+index 92ab7f84cc85d2963baf230f4264e4847b0128fe..06e5600282345cdb3431e3eb3ca6e0ee1745c9ca 100644
+--- a/Platform/RaspberryPi/Include/Protocol/RpiFirmware.h
++++ b/Platform/RaspberryPi/Include/Protocol/RpiFirmware.h
+@@ -167,6 +167,12 @@ EFI_STATUS
+   IN   UINT32                     Value
+   );
+ 
++typedef
++EFI_STATUS
++(EFIAPI *GET_TEMPERATURE) (
++  OUT UINT32  *MilliCelsius
++  );
++
+ typedef struct {
+   SET_POWER_STATE        SetPowerState;
+   GET_MAC_ADDRESS        GetMacAddress;
+@@ -190,6 +196,7 @@ typedef struct {
+   GPIO_SET_CFG           SetGpioConfig;
+   GET_RTC                GetRtc;
+   SET_RTC                SetRtc;
++  GET_TEMPERATURE        GetTemperature;
+ } RASPBERRY_PI_FIRMWARE_PROTOCOL;
+ 
+ extern EFI_GUID gRaspberryPiFirmwareProtocolGuid;
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3ababb6aa45df66fbbe764eb088377d925b6bdd
+--- /dev/null
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c
+@@ -0,0 +1,351 @@
++/** @file
++ *  Raspberry Pi 5 RP1 PWM cooling-fan control.
++ *
++ *  Automatic control exists only while UEFI Boot Services are active.
++ *  Persistent mode intentionally leaves the selected PWM state programmed
++ *  for an operating system that does not yet own the fan controller.
++ *
++ *  SPDX-License-Identifier: BSD-2-Clause-Patent
++ */
++
++#include <Uefi.h>
++#include <Guid/EventGroup.h>
++#include <Guid/RpiPlatformFormSetGuid.h>
++#include <Library/DebugLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
++#include <Protocol/Rp1Bus.h>
++#include <Protocol/RpiFirmware.h>
++#include <RpiPlatformVarStoreData.h>
++
++#include "FanControl.h"
++
++#define FAN_UPDATE_PERIOD_100NS  (2ULL * 1000 * 1000 * 10)
++#define FAN_FAIL_SAFE_SPEED      100
++#define FAN_MINIMUM_SPEED        30
++
++STATIC FAN_MODE_VARSTORE_DATA          mFanMode  = { FAN_MODE_PERSISTENT };
++STATIC FAN_SPEED_VARSTORE_DATA         mFanSpeed = { FAN_FAIL_SAFE_SPEED };
++STATIC RP1_BUS_PROTOCOL                *mRp1Bus;
++STATIC RASPBERRY_PI_FIRMWARE_PROTOCOL  *mFirmware;
++STATIC EFI_EVENT                       mFanTimer;
++STATIC EFI_EVENT                       mRp1NotifyEvent;
++STATIC EFI_EVENT                       mFirmwareNotifyEvent;
++STATIC EFI_EVENT                       mExitBootServicesEvent;
++STATIC VOID                            *mRp1Registration;
++STATIC VOID                            *mFirmwareRegistration;
++STATIC UINT8                           mAutomaticSpeed = FAN_FAIL_SAFE_SPEED;
++STATIC BOOLEAN                         mForcePersistentFailSafe;
++
++STATIC
++UINT8
++GetAutomaticFanSpeed (
++  IN UINT32  MilliCelsius
++  )
++{
++  UINT8  Target;
++
++  // User-selected curve with 5 C hysteresis on downward transitions.
++  if (MilliCelsius >= 75000) {
++    Target = 100;
++  } else if (MilliCelsius >= 67500) {
++    Target = 70;
++  } else if (MilliCelsius >= 60000) {
++    Target = 50;
++  } else if (MilliCelsius >= 50000) {
++    Target = 40;
++  } else {
++    Target = 30;
++  }
++
++  if (Target < mAutomaticSpeed) {
++    if ((mAutomaticSpeed == 100) && (MilliCelsius >= 70000)) {
++      return 100;
++    }
++
++    if ((mAutomaticSpeed == 70) && (MilliCelsius >= 62500)) {
++      return 70;
++    }
++
++    if ((mAutomaticSpeed == 50) && (MilliCelsius >= 55000)) {
++      return 50;
++    }
++
++    if ((mAutomaticSpeed == 40) && (MilliCelsius >= 45000)) {
++      return 40;
++    }
++  }
++
++  return Target;
++}
++
++STATIC
++VOID
++EFIAPI
++UpdateFan (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  EFI_STATUS  Status;
++  UINT32      Temperature;
++  UINT8       Speed;
++  UINTN       Size;
++
++  (VOID)Event;
++  (VOID)Context;
++
++  if (mRp1Bus == NULL) {
++    return;
++  }
++
++  if (mFirmware == NULL) {
++    gBS->LocateProtocol (
++           &gRaspberryPiFirmwareProtocolGuid,
++           NULL,
++           (VOID **)&mFirmware
++           );
++  }
++
++  Size = sizeof (mFanMode);
++  Status = gRT->GetVariable (
++                  L"FanMode",
++                  &gRpiPlatformFormSetGuid,
++                  NULL,
++                  &Size,
++                  &mFanMode
++                  );
++  if (EFI_ERROR (Status) || (mFanMode.Value > FAN_MODE_PERSISTENT)) {
++    mFanMode.Value = FAN_MODE_PERSISTENT;
++  }
++
++  Size = sizeof (mFanSpeed);
++  Status = gRT->GetVariable (
++                  L"FanSpeed",
++                  &gRpiPlatformFormSetGuid,
++                  NULL,
++                  &Size,
++                  &mFanSpeed
++                  );
++  if (EFI_ERROR (Status) || (mFanSpeed.Value < FAN_MINIMUM_SPEED) ||
++      (mFanSpeed.Value > FAN_FAIL_SAFE_SPEED))
++  {
++    mFanSpeed.Value = FAN_FAIL_SAFE_SPEED;
++  }
++
++  if (mForcePersistentFailSafe) {
++    mFanMode.Value = FAN_MODE_PERSISTENT;
++    Speed          = FAN_FAIL_SAFE_SPEED;
++  } else if ((mFanMode.Value == FAN_MODE_MANUAL) ||
++      (mFanMode.Value == FAN_MODE_PERSISTENT))
++  {
++    Speed = mFanSpeed.Value;
++  } else {
++    if (mFirmware == NULL) {
++      Speed = FAN_FAIL_SAFE_SPEED;
++    } else {
++      Status = mFirmware->GetTemperature (&Temperature);
++      if (EFI_ERROR (Status)) {
++        Speed = FAN_FAIL_SAFE_SPEED;
++      } else {
++        Speed           = GetAutomaticFanSpeed (Temperature);
++        mAutomaticSpeed = Speed;
++      }
++    }
++  }
++
++  Status = mRp1Bus->SetFanSpeed (mRp1Bus, Speed);
++  if (EFI_ERROR (Status) && (Speed != FAN_FAIL_SAFE_SPEED)) {
++    mRp1Bus->SetFanSpeed (mRp1Bus, FAN_FAIL_SAFE_SPEED);
++  }
++}
++
++STATIC
++VOID
++TryStartFanControl (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++
++  if (mFanTimer != NULL) {
++    return;
++  }
++
++  Status = gBS->LocateProtocol (
++                  &gRp1BusProtocolGuid,
++                  NULL,
++                  (VOID **)&mRp1Bus
++                  );
++  if (EFI_ERROR (Status)) {
++    mRp1Bus = NULL;
++    return;
++  }
++
++  // Establish a safe fan state before starting periodic temperature checks.
++  Status = mRp1Bus->SetFanSpeed (mRp1Bus, FAN_FAIL_SAFE_SPEED);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "%a: failed to establish fan fail-safe: %r\n", __func__, Status));
++    return;
++  }
++
++  Status = gBS->LocateProtocol (
++                  &gRaspberryPiFirmwareProtocolGuid,
++                  NULL,
++                  (VOID **)&mFirmware
++                  );
++  if (EFI_ERROR (Status)) {
++    mFirmware = NULL;
++  }
++
++  UpdateFan (NULL, NULL);
++  Status = gBS->CreateEvent (
++                  EVT_TIMER | EVT_NOTIFY_SIGNAL,
++                  TPL_CALLBACK,
++                  UpdateFan,
++                  NULL,
++                  &mFanTimer
++                  );
++  if (EFI_ERROR (Status)) {
++    mRp1Bus->SetFanSpeed (mRp1Bus, FAN_FAIL_SAFE_SPEED);
++    mFanTimer = NULL;
++    return;
++  }
++
++  Status = gBS->SetTimer (mFanTimer, TimerPeriodic, FAN_UPDATE_PERIOD_100NS);
++  if (EFI_ERROR (Status)) {
++    mRp1Bus->SetFanSpeed (mRp1Bus, FAN_FAIL_SAFE_SPEED);
++    gBS->CloseEvent (mFanTimer);
++    mFanTimer = NULL;
++  }
++}
++
++STATIC
++VOID
++EFIAPI
++FanProtocolNotify (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  (VOID)Event;
++  (VOID)Context;
++  TryStartFanControl ();
++}
++
++STATIC
++VOID
++EFIAPI
++FanExitBootServices (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  (VOID)Event;
++  (VOID)Context;
++
++  // UEFI timers do not run after ExitBootServices. Persistent mode leaves the
++  // last PWM value active; all other modes restore the pre-UEFI RP1 state.
++  if ((mRp1Bus != NULL) && (mFanMode.Value != FAN_MODE_PERSISTENT)) {
++    mRp1Bus->RestoreFanState (mRp1Bus);
++  }
++}
++
++VOID
++SetupFanVariables (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINTN       Size;
++  UINT32      Attributes;
++
++  Attributes = EFI_VARIABLE_NON_VOLATILE |
++               EFI_VARIABLE_BOOTSERVICE_ACCESS |
++               EFI_VARIABLE_RUNTIME_ACCESS;
++
++  Size = sizeof (mFanMode);
++  Status = gRT->GetVariable (
++                  L"FanMode",
++                  &gRpiPlatformFormSetGuid,
++                  NULL,
++                  &Size,
++                  &mFanMode
++                  );
++  if (EFI_ERROR (Status) || (mFanMode.Value > FAN_MODE_PERSISTENT)) {
++    mFanMode.Value = FAN_MODE_PERSISTENT;
++    Status = gRT->SetVariable (
++                    L"FanMode",
++                    &gRpiPlatformFormSetGuid,
++                    Attributes,
++                    sizeof (mFanMode),
++                    &mFanMode
++                    );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_WARN, "%a: could not persist FanMode: %r\n", __func__, Status));
++    }
++  }
++
++  Size = sizeof (mFanSpeed);
++  Status = gRT->GetVariable (
++                  L"FanSpeed",
++                  &gRpiPlatformFormSetGuid,
++                  NULL,
++                  &Size,
++                  &mFanSpeed
++                  );
++  if (EFI_ERROR (Status) || (mFanSpeed.Value < FAN_MINIMUM_SPEED) ||
++      (mFanSpeed.Value > FAN_FAIL_SAFE_SPEED))
++  {
++    mFanSpeed.Value = FAN_FAIL_SAFE_SPEED;
++    Status = gRT->SetVariable (
++                    L"FanSpeed",
++                    &gRpiPlatformFormSetGuid,
++                    Attributes,
++                    sizeof (mFanSpeed),
++                    &mFanSpeed
++                    );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_WARN, "%a: could not persist FanSpeed: %r\n", __func__, Status));
++    }
++  }
++}
++
++VOID
++ApplyFanVariables (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++
++  Status = gBS->CreateEventEx (
++                  EVT_NOTIFY_SIGNAL,
++                  TPL_NOTIFY,
++                  FanExitBootServices,
++                  NULL,
++                  &gEfiEventExitBootServicesGuid,
++                  &mExitBootServicesEvent
++                  );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "%a: failed to register ExitBootServices event: %r\n", __func__, Status));
++    mForcePersistentFailSafe = TRUE;
++  }
++
++  mRp1NotifyEvent = EfiCreateProtocolNotifyEvent (
++                      &gRp1BusProtocolGuid,
++                      TPL_CALLBACK,
++                      FanProtocolNotify,
++                      NULL,
++                      &mRp1Registration
++                      );
++  mFirmwareNotifyEvent = EfiCreateProtocolNotifyEvent (
++                           &gRaspberryPiFirmwareProtocolGuid,
++                           TPL_CALLBACK,
++                           FanProtocolNotify,
++                           NULL,
++                           &mFirmwareRegistration
++                           );
++
++  TryStartFanControl ();
++}
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..5842bd16aef4f340a0be8f93563f632108c93623
+--- /dev/null
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h
+@@ -0,0 +1,20 @@
++/** @file
++ *  Raspberry Pi 5 RP1 PWM cooling-fan control declarations.
++ *
++ *  SPDX-License-Identifier: BSD-2-Clause-Patent
++ */
++
++#ifndef __RPI5_FAN_CONTROL_H__
++#define __RPI5_FAN_CONTROL_H__
++
++VOID
++SetupFanVariables (
++  VOID
++  );
++
++VOID
++ApplyFanVariables (
++  VOID
++  );
++
++#endif
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.c b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.c
+index dab20b8e619811b4123db65e25ffab6b435e6a02..0236404799225b6b8792bef45144574ada6b98ac 100644
+--- a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.c
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.c
+@@ -16,6 +16,7 @@
+ #include <Library/UefiBootServicesTableLib.h>
+ 
+ #include "ConfigTable.h"
++#include "FanControl.h"
+ #include "Peripherals.h"
+ 
+ UINT32 mBoardRevisionCode;
+@@ -96,6 +97,7 @@ SetupVariables (
+ {
+   SetupConfigTableVariables ();
+   SetupPeripheralVariables ();
++  SetupFanVariables ();
+ }
+ 
+ STATIC
+@@ -107,6 +109,7 @@ ApplyVariables (
+ {
+   ApplyConfigTableVariables ();
+   ApplyPeripheralVariables ();
++  ApplyFanVariables ();
+ }
+ 
+ EFI_STATUS
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.inf b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.inf
+index 68fde43f07465b8bcc1960ae17179413f995fb1b..68f4678b1d6b4af2f9e79d18984bf3e68b87011a 100644
+--- a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.inf
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxe.inf
+@@ -20,6 +20,7 @@
+   RpiPlatformDxeHii.vfr
+   ConfigTable.c
+   Peripherals.c
++  FanControl.c
+ 
+ [Packages]
+   MdePkg/MdePkg.dec
+@@ -53,6 +54,7 @@
+ [Guids]
+   gRpiPlatformFormSetGuid
+   gEfiEventReadyToBootGuid
++  gEfiEventExitBootServicesGuid
+ 
+ [Protocols]
+   gEfiAcpiSdtProtocolGuid                     ## CONSUMES
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.uni b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.uni
+index 0d29271cc68b3c7e8d59efd9070c411e76a94ccd..ddd4658a4ec8773c16502952706628c7dfb272f6 100644
+--- a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.uni
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.uni
+@@ -86,3 +86,17 @@
+ #string STR_PCIE_LINK_SPEED_GEN1                           #language en-US "Gen 1 (2.5 GT/s)"
+ #string STR_PCIE_LINK_SPEED_GEN2                           #language en-US "Gen 2 (5 GT/s)"
+ #string STR_PCIE_LINK_SPEED_GEN3                           #language en-US "Gen 3 (8 GT/s)"
++
++/*
++ * Cooling fan configuration
++ */
++#string STR_FAN_FORM_TITLE                                 #language en-US "Cooling Fan"
++#string STR_FAN_FORM_HELP                                  #language en-US "Configure the GPIO45 PWM fan used by the official Raspberry Pi 5 Active Cooler and compatible fans."
++#string STR_FAN_MODE_PROMPT                                #language en-US "Control Mode"
++#string STR_FAN_MODE_HELP                                  #language en-US "Automatic follows CPU temperature only while UEFI is running. Manual restores the previous hardware state when Windows starts. Manual (Persistent) leaves the selected fixed PWM value active after Windows starts."
++#string STR_FAN_MODE_AUTOMATIC                             #language en-US "Automatic (UEFI only)"
++#string STR_FAN_MODE_MANUAL                                #language en-US "Manual (UEFI only)"
++#string STR_FAN_MODE_PERSISTENT                            #language en-US "Manual (Persistent)"
++#string STR_FAN_SPEED_PROMPT                               #language en-US "Manual Speed (%)"
++#string STR_FAN_SPEED_HELP                                 #language en-US "Set fan PWM from 30 to 100 percent in 5 percent steps. Use 100 percent until a tested Windows fan driver is installed."
++#string STR_FAN_PERSISTENT_WARNING                         #language en-US "WARNING: The selected speed remains fixed after Windows starts. The safe default is 100%. Selecting a lower value without an operating-system fan driver can cause overheating under load."
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.vfr b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.vfr
+index 71b43219f0b292892cc2dc8e24b28b7bbea1279d..123d9a46e97c9142005112f3718330cfcde893ff 100644
+--- a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.vfr
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/RpiPlatformDxeHii.vfr
+@@ -51,6 +51,16 @@ formset
+       name  = Pcie1Settings,
+       guid  = RPI_PLATFORM_FORMSET_GUID;
+ 
++    efivarstore FAN_MODE_VARSTORE_DATA,
++      attribute = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
++      name  = FanMode,
++      guid  = RPI_PLATFORM_FORMSET_GUID;
++
++    efivarstore FAN_SPEED_VARSTORE_DATA,
++      attribute = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
++      name  = FanSpeed,
++      guid  = RPI_PLATFORM_FORMSET_GUID;
++
+     form formid = 1,
+       title  = STRING_TOKEN(STR_FORM_SET_TITLE);
+ 
+@@ -64,6 +74,40 @@ formset
+       goto 0x1001,
+         prompt = STRING_TOKEN(STR_PCIE_FORM_TITLE),
+         help = STRING_TOKEN(STR_PCIE_FORM_HELP);
++
++      goto 0x1002,
++        prompt = STRING_TOKEN(STR_FAN_FORM_TITLE),
++        help = STRING_TOKEN(STR_FAN_FORM_HELP);
++    endform;
++
++    form formid = 0x1002,
++        title = STRING_TOKEN(STR_FAN_FORM_TITLE);
++
++        oneof varid = FanMode.Value,
++          prompt      = STRING_TOKEN(STR_FAN_MODE_PROMPT),
++          help        = STRING_TOKEN(STR_FAN_MODE_HELP),
++          flags       = NUMERIC_SIZE_1 | INTERACTIVE | RESET_REQUIRED,
++          default     = FAN_MODE_PERSISTENT,
++          option text = STRING_TOKEN(STR_FAN_MODE_AUTOMATIC), value = FAN_MODE_AUTOMATIC, flags = 0;
++          option text = STRING_TOKEN(STR_FAN_MODE_MANUAL), value = FAN_MODE_MANUAL, flags = 0;
++          option text = STRING_TOKEN(STR_FAN_MODE_PERSISTENT), value = FAN_MODE_PERSISTENT, flags = 0;
++        endoneof;
++
++        suppressif (get(FanMode.Value) == FAN_MODE_AUTOMATIC);
++          numeric varid = FanSpeed.Value,
++            prompt  = STRING_TOKEN(STR_FAN_SPEED_PROMPT),
++            help    = STRING_TOKEN(STR_FAN_SPEED_HELP),
++            flags   = DISPLAY_UINT_DEC | NUMERIC_SIZE_1 | INTERACTIVE | RESET_REQUIRED,
++            minimum = 30,
++            maximum = 100,
++            step    = 5,
++            default = 100,
++          endnumeric;
++        endif;
++
++        suppressif (get(FanMode.Value) != FAN_MODE_PERSISTENT);
++          subtitle text = STRING_TOKEN(STR_FAN_PERSISTENT_WARNING);
++        endif;
+     endform;
+ 
+     form formid = 0x1000,
+diff --git a/Platform/RaspberryPi/RPi5/Include/RpiPlatformVarStoreData.h b/Platform/RaspberryPi/RPi5/Include/RpiPlatformVarStoreData.h
+index 5b9bad5cc63a56450edd17bc5ea8da563bf4f460..b6d8002f3563353f8b92bd722131a6aa07266065 100644
+--- a/Platform/RaspberryPi/RPi5/Include/RpiPlatformVarStoreData.h
++++ b/Platform/RaspberryPi/RPi5/Include/RpiPlatformVarStoreData.h
+@@ -32,4 +32,16 @@ typedef struct {
+   UINT32 Value;
+ } ACPI_PCIE_32_BIT_BAR_SPACE_SIZE_MB_VARSTORE_DATA;
+ 
++#define FAN_MODE_AUTOMATIC   0
++#define FAN_MODE_MANUAL      1
++#define FAN_MODE_PERSISTENT  2
++
++typedef struct {
++  UINT8  Value;
++} FAN_MODE_VARSTORE_DATA;
++
++typedef struct {
++  UINT8  Value;
++} FAN_SPEED_VARSTORE_DATA;
++
+ #endif // __RPI_PLATFORM_VARSTORE_DATA_H__
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.c b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.c
+index 34c9d22662c9ea7c8d136337222d3c382d0a4fe6..e049e6f1539f9c7f6103f78eb7f764feabf5c659 100644
+--- a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.c
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.c
+@@ -17,6 +17,7 @@
+ #include <Rp1.h>
+ 
+ #include "Rp1BusDxe.h"
++#include "Rp1Fan.h"
+ 
+ STATIC
+ VOID
+@@ -406,6 +407,8 @@ Rp1BusDriverBindingStart (
+   Rp1Data->DriverBinding            = This;
+   Rp1Data->PciIo                    = PciIo;
+   Rp1Data->Rp1Bus.GetPeripheralBase = Rp1BusGetPeripheralBase;
++  Rp1Data->Rp1Bus.SetFanSpeed        = Rp1BusSetFanSpeed;
++  Rp1Data->Rp1Bus.RestoreFanState    = Rp1BusRestoreFanState;
+ 
+   Status = PciIo->GetBarAttributes (
+                     PciIo,
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.inf b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.inf
+index 671ec77fa7121119c56f5f538b6e1acd72b547b6..b683aba7d6f83d3dba2faecec9cdbb085c3bdd0d 100644
+--- a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.inf
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1BusDxe.inf
+@@ -17,6 +17,8 @@
+ [Sources]
+   Rp1BusDxe.c
+   ComponentName.c
++  Rp1Fan.c
++  Rp1Fan.h
+ 
+ [Packages]
+   MdePkg/MdePkg.dec
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..9918292bc64d938eb4ef77c890bf8e3d6f095f22
+--- /dev/null
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
+@@ -0,0 +1,197 @@
++/** @file
++ *  RP1 PWM1 channel 3 control for the Raspberry Pi 5 cooling-fan header.
++ *
++ *  GPIO45 is routed to PWM1 channel 3 at approximately 24 kHz with inverted
++ *  polarity, matching the official Raspberry Pi 5 Active Cooler interface.
++ *
++ *  SPDX-License-Identifier: BSD-2-Clause-Patent
++ */
++
++#include <Uefi.h>
++#include <Library/DebugLib.h>
++#include <Library/IoLib.h>
++#include <Rp1.h>
++
++#include "Rp1BusDxe.h"
++#include "Rp1Fan.h"
++
++#define RP1_FAN_GPIO_BANK_BASE           RP1_IO_BANK2_BASE
++#define RP1_FAN_GPIO_BANK_PIN            11
++#define RP1_FAN_GPIO_CTRL_OFFSET         0x004
++#define RP1_FAN_GPIO_CTRL_FUNCSEL_MASK   0x01F
++#define RP1_FAN_GPIO_CTRL_OUTOVER_MASK   0x3000
++#define RP1_FAN_GPIO_CTRL_OEOVER_MASK    0xC000
++
++#define RP1_FAN_PAD_BANK_BASE            RP1_PADS_BANK2_BASE
++#define RP1_FAN_PAD_BANK_OFFSET          0x004
++#define RP1_FAN_PAD_OUT_DISABLE          BIT7
++#define RP1_FAN_PAD_INPUT_ENABLE         BIT6
++#define RP1_FAN_PAD_PULL_MASK            (BIT3 | BIT2)
++#define RP1_FAN_PAD_PULL_DOWN            BIT2
++
++#define RP1_CLOCK_PWM1_CTRL_OFFSET       0x084
++#define RP1_CLOCK_PWM1_DIV_INT_OFFSET    0x088
++#define RP1_CLOCK_PWM1_DIV_FRAC_OFFSET   0x08C
++#define RP1_CLOCK_PWM1_SEL_OFFSET        0x090
++#define RP1_CLOCK_CTRL_ENABLE            BIT11
++#define RP1_CLOCK_CTRL_AUXSRC_MASK       0x3E0
++#define RP1_CLOCK_CTRL_SRC_MASK          BIT0
++#define RP1_CLOCK_CTRL_AUXSRC_XOSC       (2U << 5)
++#define RP1_CLOCK_CTRL_SRC_AUX           BIT0
++#define RP1_CLOCK_PWM1_DIV_INT_50MHZ     1
++#define RP1_CLOCK_PWM1_SEL_50MHZ         BIT1
++
++#define RP1_PWM_GLOBAL_CTRL_OFFSET       0x000
++#define RP1_PWM_CHANNEL_CTRL_OFFSET(I)   (0x014 + ((I) * 0x10))
++#define RP1_PWM_RANGE_OFFSET(I)          (0x018 + ((I) * 0x10))
++#define RP1_PWM_DUTY_OFFSET(I)           (0x020 + ((I) * 0x10))
++#define RP1_PWM_CHANNEL                  3
++#define RP1_PWM_CHANNEL_DEFAULT          (BIT8 | BIT0)
++#define RP1_PWM_POLARITY_INVERTED        BIT3
++#define RP1_PWM_GLOBAL_CHANNEL_ENABLE(I) (1U << (I))
++#define RP1_PWM_GLOBAL_SET_UPDATE        BIT31
++#define RP1_FAN_PWM_RANGE                2078
++#define RP1_FAN_PWM_DUTY_MAX             2038
++
++typedef struct {
++  BOOLEAN  Valid;
++  UINT32   ClockCtrl;
++  UINT32   ClockDivInt;
++  UINT32   ClockDivFrac;
++  UINT32   ClockSel;
++  UINT32   GpioCtrl;
++  UINT32   PadCtrl;
++  UINT32   PwmGlobalCtrl;
++  UINT32   PwmChannelCtrl;
++  UINT32   PwmRange;
++  UINT32   PwmDuty;
++} RP1_FAN_SAVED_STATE;
++
++STATIC RP1_FAN_SAVED_STATE  mFanSavedState;
++
++EFI_STATUS
++EFIAPI
++Rp1BusSetFanSpeed (
++  IN RP1_BUS_PROTOCOL  *This,
++  IN UINT8             Percent
++  )
++{
++  RP1_BUS_DATA          *Rp1Data;
++  EFI_PHYSICAL_ADDRESS  ClockBase;
++  EFI_PHYSICAL_ADDRESS  GpioCtrl;
++  EFI_PHYSICAL_ADDRESS  PadCtrl;
++  EFI_PHYSICAL_ADDRESS  PwmBase;
++  UINT32                Value;
++
++  if ((This == NULL) || (Percent > 100)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  Rp1Data   = RP1_BUS_DATA_FROM_THIS (This);
++  ClockBase = Rp1Data->PeripheralBase + RP1_CLOCKS_MAIN_BASE;
++  PwmBase   = Rp1Data->PeripheralBase + RP1_PWM1_BASE;
++  GpioCtrl  = Rp1Data->PeripheralBase + RP1_FAN_GPIO_BANK_BASE +
++              (RP1_FAN_GPIO_BANK_PIN * 8) + RP1_FAN_GPIO_CTRL_OFFSET;
++  PadCtrl   = Rp1Data->PeripheralBase + RP1_FAN_PAD_BANK_BASE +
++              RP1_FAN_PAD_BANK_OFFSET + (RP1_FAN_GPIO_BANK_PIN * 4);
++
++  if (!mFanSavedState.Valid) {
++    mFanSavedState.ClockCtrl      = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET);
++    mFanSavedState.ClockDivInt    = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_DIV_INT_OFFSET);
++    mFanSavedState.ClockDivFrac   = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_DIV_FRAC_OFFSET);
++    mFanSavedState.ClockSel       = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_SEL_OFFSET);
++    mFanSavedState.GpioCtrl       = MmioRead32 (GpioCtrl);
++    mFanSavedState.PadCtrl        = MmioRead32 (PadCtrl);
++    mFanSavedState.PwmGlobalCtrl  = MmioRead32 (PwmBase + RP1_PWM_GLOBAL_CTRL_OFFSET);
++    mFanSavedState.PwmChannelCtrl = MmioRead32 (PwmBase + RP1_PWM_CHANNEL_CTRL_OFFSET (RP1_PWM_CHANNEL));
++    mFanSavedState.PwmRange       = MmioRead32 (PwmBase + RP1_PWM_RANGE_OFFSET (RP1_PWM_CHANNEL));
++    mFanSavedState.PwmDuty        = MmioRead32 (PwmBase + RP1_PWM_DUTY_OFFSET (RP1_PWM_CHANNEL));
++    mFanSavedState.Valid          = TRUE;
++  }
++
++  Value  = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET);
++  Value &= ~RP1_CLOCK_CTRL_ENABLE;
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET, Value);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_DIV_INT_OFFSET, RP1_CLOCK_PWM1_DIV_INT_50MHZ);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_DIV_FRAC_OFFSET, 0);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_SEL_OFFSET, RP1_CLOCK_PWM1_SEL_50MHZ);
++  Value  = MmioRead32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET);
++  Value &= ~(RP1_CLOCK_CTRL_AUXSRC_MASK | RP1_CLOCK_CTRL_SRC_MASK);
++  Value |= RP1_CLOCK_CTRL_AUXSRC_XOSC | RP1_CLOCK_CTRL_SRC_AUX |
++           RP1_CLOCK_CTRL_ENABLE;
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET, Value);
++
++  Value  = MmioRead32 (PadCtrl);
++  Value &= ~(RP1_FAN_PAD_OUT_DISABLE | RP1_FAN_PAD_PULL_MASK);
++  Value |= RP1_FAN_PAD_INPUT_ENABLE | RP1_FAN_PAD_PULL_DOWN;
++  MmioWrite32 (PadCtrl, Value);
++
++  // GPIO45 function zero is PWM1 channel 3 on RP1.
++  Value  = MmioRead32 (GpioCtrl);
++  Value &= ~(RP1_FAN_GPIO_CTRL_FUNCSEL_MASK |
++             RP1_FAN_GPIO_CTRL_OUTOVER_MASK |
++             RP1_FAN_GPIO_CTRL_OEOVER_MASK);
++  MmioWrite32 (GpioCtrl, Value);
++
++  MmioWrite32 (
++    PwmBase + RP1_PWM_CHANNEL_CTRL_OFFSET (RP1_PWM_CHANNEL),
++    RP1_PWM_CHANNEL_DEFAULT | RP1_PWM_POLARITY_INVERTED
++    );
++  MmioWrite32 (
++    PwmBase + RP1_PWM_RANGE_OFFSET (RP1_PWM_CHANNEL),
++    RP1_FAN_PWM_RANGE
++    );
++  MmioWrite32 (
++    PwmBase + RP1_PWM_DUTY_OFFSET (RP1_PWM_CHANNEL),
++    (RP1_FAN_PWM_DUTY_MAX * Percent + 50) / 100
++    );
++
++  Value  = MmioRead32 (PwmBase + RP1_PWM_GLOBAL_CTRL_OFFSET);
++  Value |= RP1_PWM_GLOBAL_CHANNEL_ENABLE (RP1_PWM_CHANNEL);
++  MmioWrite32 (PwmBase + RP1_PWM_GLOBAL_CTRL_OFFSET, Value);
++  MmioWrite32 (
++    PwmBase + RP1_PWM_GLOBAL_CTRL_OFFSET,
++    Value | RP1_PWM_GLOBAL_SET_UPDATE
++    );
++
++  DEBUG ((DEBUG_INFO, "RP1: cooling fan set to %u%%\n", Percent));
++  return EFI_SUCCESS;
++}
++
++EFI_STATUS
++EFIAPI
++Rp1BusRestoreFanState (
++  IN RP1_BUS_PROTOCOL  *This
++  )
++{
++  RP1_BUS_DATA          *Rp1Data;
++  EFI_PHYSICAL_ADDRESS  ClockBase;
++  EFI_PHYSICAL_ADDRESS  GpioCtrl;
++  EFI_PHYSICAL_ADDRESS  PadCtrl;
++  EFI_PHYSICAL_ADDRESS  PwmBase;
++
++  if ((This == NULL) || !mFanSavedState.Valid) {
++    return EFI_NOT_READY;
++  }
++
++  Rp1Data   = RP1_BUS_DATA_FROM_THIS (This);
++  ClockBase = Rp1Data->PeripheralBase + RP1_CLOCKS_MAIN_BASE;
++  PwmBase   = Rp1Data->PeripheralBase + RP1_PWM1_BASE;
++  GpioCtrl  = Rp1Data->PeripheralBase + RP1_FAN_GPIO_BANK_BASE +
++              (RP1_FAN_GPIO_BANK_PIN * 8) + RP1_FAN_GPIO_CTRL_OFFSET;
++  PadCtrl   = Rp1Data->PeripheralBase + RP1_FAN_PAD_BANK_BASE +
++              RP1_FAN_PAD_BANK_OFFSET + (RP1_FAN_GPIO_BANK_PIN * 4);
++
++  MmioWrite32 (PwmBase + RP1_PWM_GLOBAL_CTRL_OFFSET, mFanSavedState.PwmGlobalCtrl);
++  MmioWrite32 (PwmBase + RP1_PWM_CHANNEL_CTRL_OFFSET (RP1_PWM_CHANNEL), mFanSavedState.PwmChannelCtrl);
++  MmioWrite32 (PwmBase + RP1_PWM_RANGE_OFFSET (RP1_PWM_CHANNEL), mFanSavedState.PwmRange);
++  MmioWrite32 (PwmBase + RP1_PWM_DUTY_OFFSET (RP1_PWM_CHANNEL), mFanSavedState.PwmDuty);
++  MmioWrite32 (GpioCtrl, mFanSavedState.GpioCtrl);
++  MmioWrite32 (PadCtrl, mFanSavedState.PadCtrl);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_DIV_INT_OFFSET, mFanSavedState.ClockDivInt);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_DIV_FRAC_OFFSET, mFanSavedState.ClockDivFrac);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_SEL_OFFSET, mFanSavedState.ClockSel);
++  MmioWrite32 (ClockBase + RP1_CLOCK_PWM1_CTRL_OFFSET, mFanSavedState.ClockCtrl);
++  mFanSavedState.Valid = FALSE;
++  return EFI_SUCCESS;
++}
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..39779e9fe3fa9f596b8cfa256ba04670fc860b64
+--- /dev/null
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h
+@@ -0,0 +1,23 @@
++/** @file
++ *  RP1 cooling-fan hardware interface.
++ *
++ *  SPDX-License-Identifier: BSD-2-Clause-Patent
++ */
++
++#ifndef __RP1_FAN_H__
++#define __RP1_FAN_H__
++
++EFI_STATUS
++EFIAPI
++Rp1BusSetFanSpeed (
++  IN RP1_BUS_PROTOCOL  *This,
++  IN UINT8             Percent
++  );
++
++EFI_STATUS
++EFIAPI
++Rp1BusRestoreFanState (
++  IN RP1_BUS_PROTOCOL  *This
++  );
++
++#endif
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Protocol/Rp1Bus.h b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Protocol/Rp1Bus.h
+index 4ae879b810cdf73c595a7969d90d713ca587f506..d4e2e3428eeae767f69e2e40f79d0d84b03ba97c 100644
+--- a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Protocol/Rp1Bus.h
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Protocol/Rp1Bus.h
+@@ -20,8 +20,23 @@ EFI_PHYSICAL_ADDRESS
+   IN RP1_BUS_PROTOCOL                   *This
+   );
+ 
++typedef
++EFI_STATUS
++(EFIAPI *RP1_BUS_SET_FAN_SPEED)(
++  IN RP1_BUS_PROTOCOL  *This,
++  IN UINT8             Percent
++  );
++
++typedef
++EFI_STATUS
++(EFIAPI *RP1_BUS_RESTORE_FAN_STATE)(
++  IN RP1_BUS_PROTOCOL  *This
++  );
++
+ struct _RP1_BUS_PROTOCOL {
+   RP1_BUS_GET_PERIPHERAL_BASE    GetPeripheralBase;
++  RP1_BUS_SET_FAN_SPEED          SetFanSpeed;
++  RP1_BUS_RESTORE_FAN_STATE      RestoreFanState;
+ };
+ 
+ extern EFI_GUID  gRp1BusProtocolGuid;
+diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
+index dd7724ccfbe62d91d032a01d2ddf4cde907cb526..eb030a7068b1b7afc7a45e170da7629ab43ca025 100644
+--- a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
++++ b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
+@@ -81,3 +81,54 @@ Device (ETH0) {
+     }
+   })
+ }
++
++//
++// Raspberry Pi 5 cooling-fan interface for the experimental Windows ARM64
++// driver. Resource order is an ABI: clocks, PWM1, GPIO bank 2, pad bank 2,
++// then the BCM2712 property mailbox.
++//
++Device (FAN0) {
++  Name (_HID, "RPI0FAN")
++  Name (_UID, 0x0)
++  Name (_CCA, 0x0)
++
++  Method (_CRS, 0, Serialized) {
++    Name (RBUF, ResourceTemplate () {
++      RP1_QWORDMEMORY_BUF (00)
++      RP1_QWORDMEMORY_BUF (01)
++      RP1_QWORDMEMORY_BUF (02)
++      RP1_QWORDMEMORY_BUF (03)
++      QWordMemory (ResourceConsumer,
++        PosDecode,
++        MinFixed,
++        MaxFixed,
++        NonCacheable,
++        ReadWrite,
++        0x0,
++        0x000000107C013880,
++        0x000000107C0138BF,
++        0x0,
++        0x40,
++        ,
++        ,
++        )
++    })
++    RP1_QWORDMEMORY_SET (00, RP1_CLOCKS_MAIN_BASE, 0x1000)
++    RP1_QWORDMEMORY_SET (01, RP1_PWM1_BASE, 0x1000)
++    RP1_QWORDMEMORY_SET (02, RP1_IO_BANK2_BASE, 0x1000)
++    RP1_QWORDMEMORY_SET (03, RP1_PADS_BANK2_BASE, 0x1000)
++    Return (RBUF)
++  }
++
++  Name (_DSD, Package () {
++    ToUUID ("daffd814-6eba-4d8c-8a91-bc9bbf4aa301"),
++    Package () {
++      Package () { "compatible", "raspberrypi,rpi5-fan" },
++      Package () { "clock-frequency", 50000000 },
++      Package () { "pwm-frequency", 24000 },
++      Package () { "pwm-channel", 3 },
++      Package () { "fan-gpio", 45 },
++      Package () { "failsafe-percent", 100 }
++    }
++  })
++}

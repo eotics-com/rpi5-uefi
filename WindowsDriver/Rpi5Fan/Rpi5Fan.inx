@@ -1,0 +1,53 @@
+[Version]
+Signature="$WINDOWS NT$"
+Class=System
+ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider=%Provider%
+DriverVer=08/06/2026,0.1.0.0
+CatalogFile=Rpi5Fan.cat
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=13
+
+[SourceDisksNames]
+1=%DiskName%,,,""
+
+[SourceDisksFiles]
+Rpi5Fan.sys=1,,
+
+[Manufacturer]
+%Manufacturer%=Devices,NT$ARCH$.10.0...22000
+
+[Devices.NT$ARCH$.10.0...22000]
+%DeviceDesc%=Fan_Install,ACPI\RPI0FAN
+
+[Fan_Install.NT]
+CopyFiles=DriverCopy
+
+[DriverCopy]
+Rpi5Fan.sys
+
+[Fan_Install.NT.Services]
+AddService=Rpi5Fan,%SPSVCINST_ASSOCSERVICE%,Fan_Service
+
+[Fan_Service]
+DisplayName=%ServiceDesc%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%13%\Rpi5Fan.sys
+
+[Fan_Install.NT.Wdf]
+KmdfService=Rpi5Fan,Fan_Wdf
+
+[Fan_Wdf]
+KmdfLibraryVersion=$KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE=0x00000002
+Provider="RPi5 UEFI Community"
+Manufacturer="RPi5 UEFI Community"
+DiskName="Raspberry Pi 5 fan driver package"
+DeviceDesc="Raspberry Pi 5 Active Cooler"
+ServiceDesc="Raspberry Pi 5 Active Cooler Driver"
