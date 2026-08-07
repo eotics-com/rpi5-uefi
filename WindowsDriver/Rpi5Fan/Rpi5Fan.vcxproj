@@ -26,6 +26,7 @@
   <PropertyGroup>
     <Rpi5Arm64WdkRoot>$(NuGetPackageRoot)microsoft.windows.wdk.arm64\10.0.26100.6584\c\</Rpi5Arm64WdkRoot>
     <Rpi5SdkRoot>$(NuGetPackageRoot)microsoft.windows.sdk.cpp\10.0.26100.1\c\</Rpi5SdkRoot>
+    <Rpi5Arm64SdkLibRoot>$(NuGetPackageRoot)microsoft.windows.sdk.cpp.arm64\10.0.26100.1\c\um\arm64\</Rpi5Arm64SdkLibRoot>
     <WDKContentRoot>$(Rpi5Arm64WdkRoot)</WDKContentRoot>
     <WindowsSdkDir>$(Rpi5SdkRoot)</WindowsSdkDir>
     <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
@@ -36,6 +37,15 @@
     <WDKBuildFolder>10.0.26100.0</WDKBuildFolder>
     <DDKPlatform>arm64</DDKPlatform>
     <KMDF_VERSION_MINOR>33</KMDF_VERSION_MINOR>
+    <CRT_IncludePath>$(Rpi5SdkRoot)Include\$(WDKBuildFolder)\ucrt</CRT_IncludePath>
+    <KM_IncludePath>$(Rpi5Arm64WdkRoot)Include\$(WDKBuildFolder)\km</KM_IncludePath>
+    <KIT_SHARED_IncludePath>$(Rpi5SdkRoot)Include\$(WDKBuildFolder)\shared</KIT_SHARED_IncludePath>
+    <KIT_SHARED_INC_PATH_WDK>$(Rpi5Arm64WdkRoot)Include\$(WDKBuildFolder)\shared</KIT_SHARED_INC_PATH_WDK>
+    <DDK_LibraryPath_DDKPlatform>$(Rpi5Arm64WdkRoot)Lib\$(WDKBuildFolder)\km\ARM64</DDK_LibraryPath_DDKPlatform>
+    <DDK_LIB_PATH>$(DDK_LibraryPath_DDKPlatform)\</DDK_LIB_PATH>
+    <KMDF_INC_PATH>$(Rpi5Arm64WdkRoot)Include\wdf\kmdf\</KMDF_INC_PATH>
+    <KMDF_LIB_PATH>$(Rpi5Arm64WdkRoot)Lib\wdf\kmdf\ARM64\</KMDF_LIB_PATH>
+    <LibraryPath>$(DDK_LibraryPath_DDKPlatform);$(KMDF_LIB_PATH)1.33;$(Rpi5Arm64SdkLibRoot)</LibraryPath>
   </PropertyGroup>
   <Import Project="$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Default.props"
           Condition="Exists('$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Default.props')" />
