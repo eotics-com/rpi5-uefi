@@ -117,16 +117,18 @@ index 92ab7f84cc85d2963baf230f4264e4847b0128fe..06e5600282345cdb3431e3eb3ca6e0ee
  extern EFI_GUID gRaspberryPiFirmwareProtocolGuid;
 diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..d3ababb6aa45df66fbbe764eb088377d925b6bdd
+index 0000000000000000000000000000000000000000..2f9237ef909bbded0d32f2740f304d4eea16e12b
 --- /dev/null
 +++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.c
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,353 @@
 +/** @file
 + *  Raspberry Pi 5 RP1 PWM cooling-fan control.
 + *
 + *  Automatic control exists only while UEFI Boot Services are active.
 + *  Persistent mode intentionally leaves the selected PWM state programmed
 + *  for an operating system that does not yet own the fan controller.
++ *
++ *  Copyright (c) 2026, Soulveig and contributors. All rights reserved.
 + *
 + *  SPDX-License-Identifier: BSD-2-Clause-Patent
 + */
@@ -474,12 +476,14 @@ index 0000000000000000000000000000000000000000..d3ababb6aa45df66fbbe764eb088377d
 +}
 diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..5842bd16aef4f340a0be8f93563f632108c93623
+index 0000000000000000000000000000000000000000..1c179e1926654ffd4a0c8d65c3e7d855de57d811
 --- /dev/null
 +++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/FanControl.h
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,22 @@
 +/** @file
 + *  Raspberry Pi 5 RP1 PWM cooling-fan control declarations.
++ *
++ *  Copyright (c) 2026, Soulveig and contributors. All rights reserved.
 + *
 + *  SPDX-License-Identifier: BSD-2-Clause-Patent
 + */
@@ -687,15 +691,17 @@ index 671ec77fa7121119c56f5f538b6e1acd72b547b6..b683aba7d6f83d3dba2faecec9cdbb08
    MdePkg/MdePkg.dec
 diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..9918292bc64d938eb4ef77c890bf8e3d6f095f22
+index 0000000000000000000000000000000000000000..870530306274f97199f3dcf6dbaf2213f7ef46e7
 --- /dev/null
 +++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,199 @@
 +/** @file
 + *  RP1 PWM1 channel 3 control for the Raspberry Pi 5 cooling-fan header.
 + *
 + *  GPIO45 is routed to PWM1 channel 3 at approximately 24 kHz with inverted
 + *  polarity, matching the official Raspberry Pi 5 Active Cooler interface.
++ *
++ *  Copyright (c) 2026, Soulveig and contributors. All rights reserved.
 + *
 + *  SPDX-License-Identifier: BSD-2-Clause-Patent
 + */
@@ -890,12 +896,14 @@ index 0000000000000000000000000000000000000000..9918292bc64d938eb4ef77c890bf8e3d
 +}
 diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..39779e9fe3fa9f596b8cfa256ba04670fc860b64
+index 0000000000000000000000000000000000000000..3b1e41d0ecbd7315cb20c6c45fa03431d4d6b4d4
 --- /dev/null
 +++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.h
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,25 @@
 +/** @file
 + *  RP1 cooling-fan hardware interface.
++ *
++ *  Copyright (c) 2026, Soulveig and contributors. All rights reserved.
 + *
 + *  SPDX-License-Identifier: BSD-2-Clause-Patent
 + */
@@ -946,7 +954,7 @@ index 4ae879b810cdf73c595a7969d90d713ca587f506..d4e2e3428eeae767f69e2e40f79d0d84
  
  extern EFI_GUID  gRp1BusProtocolGuid;
 diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
-index dd7724ccfbe62d91d032a01d2ddf4cde907cb526..eb030a7068b1b7afc7a45e170da7629ab43ca025 100644
+index dd7724ccfbe62d91d032a01d2ddf4cde907cb526..eb52ef378332b254fae23c20ecc5905757424e45 100644
 --- a/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
 +++ b/Silicon/RaspberryPi/RpiSiliconPkg/Include/Rp1.asi
 @@ -81,3 +81,54 @@ Device (ETH0) {
@@ -960,7 +968,7 @@ index dd7724ccfbe62d91d032a01d2ddf4cde907cb526..eb030a7068b1b7afc7a45e170da7629a
 +// then the BCM2712 property mailbox.
 +//
 +Device (FAN0) {
-+  Name (_HID, "RPI0FAN")
++  Name (_HID, "RPI000F")
 +  Name (_UID, 0x0)
 +  Name (_CCA, 0x0)
 +

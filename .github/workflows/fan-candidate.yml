@@ -41,12 +41,43 @@ jobs:
       - name: Restore WDK NuGet package and build ARM64 driver
         shell: pwsh
         run: |
-          msbuild WindowsDriver\Rpi5Fan\Rpi5Fan.sln `
-            /restore `
+          $solution = 'WindowsDriver\Rpi5Fan\Rpi5Fan.sln'
+          msbuild $solution `
+            /t:Restore `
+            /p:Configuration=Release `
+            /p:Platform=ARM64 `
+            /p:TargetPlatformVersion=10.0.26100.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # WDK 26100 ships VS17-named host tasks. windows-latest currently
+          # uses MSBuild 18, whose WDK targets request the host-major filename.
+          $wdkBin = Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.wdk.arm64\10.0.26100.6584\c\build\10.0.26100.0\bin'
+          $msbuildVersion = (& msbuild -version -nologo |
+            Where-Object { $_ -match '^\d+\.' } |
+            Select-Object -Last 1).Trim()
+          $hostTaskVersion = "$(([version]$msbuildVersion).Major).0"
+          foreach ($baseName in @(
+            'Microsoft.DriverKit.Build.Tasks',
+            'Microsoft.DriverKit.Build.Tasks.PackageVerifier'
+          )) {
+            $target = Join-Path $wdkBin "$baseName.$hostTaskVersion.dll"
+            if (-not (Test-Path -LiteralPath $target)) {
+              $source = Get-ChildItem -LiteralPath $wdkBin -Filter "$baseName.*.dll" |
+                Sort-Object Name -Descending |
+                Select-Object -First 1
+              if ($null -eq $source) {
+                throw "No compatible WDK host task found for $baseName"
+              }
+              Copy-Item -LiteralPath $source.FullName -Destination $target
+            }
+          }
+
+          msbuild $solution `
             /m `
             /p:Configuration=Release `
             /p:Platform=ARM64 `
             /p:TargetPlatformVersion=10.0.26100.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Validate driver INF
         shell: pwsh
@@ -63,4 +94,6 @@ jobs:
             WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.sys
             WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.inf
             WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.cat
+            THIRD_PARTY_NOTICES.md
+            LICENSES/Soulveig-BSD-2-Clause-Patent.txt
           if-no-files-found: error

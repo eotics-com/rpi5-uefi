@@ -1,6 +1,6 @@
 # Experimental Raspberry Pi 5 Active Cooler driver
 
-This ARM64 KMDF driver binds to `ACPI\\RPI0FAN`, which is published by the
+This ARM64 KMDF driver binds to `ACPI\\RPI000F`, which is published by the
 companion UEFI fan patch. It directly controls the official Raspberry Pi 5
 Active Cooler through RP1 PWM1 channel 3 and reads the SoC temperature through
 the BCM2712 property mailbox.

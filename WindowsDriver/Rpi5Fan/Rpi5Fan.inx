@@ -20,7 +20,7 @@ Rpi5Fan.sys=1,,
 %Manufacturer%=Devices,NT$ARCH$.10.0...22000
 
 [Devices.NT$ARCH$.10.0...22000]
-%DeviceDesc%=Fan_Install,ACPI\RPI0FAN
+%DeviceDesc%=Fan_Install,ACPI\RPI000F
 
 [Fan_Install.NT]
 CopyFiles=DriverCopy

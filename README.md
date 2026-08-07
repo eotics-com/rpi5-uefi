@@ -157,6 +157,10 @@ driver is installed, Windows reads the SoC temperature and applies the selected
 curve automatically. Any temperature, mailbox, power, or unload failure requests
 100% fan.
 
+The firmware fan modules adapt work from Soulveig's Raspberry Pi 5 UEFI fan
+implementation. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and the
+retained license text in `LICENSES/`.
+
 This candidate has not been physically tested. Do not treat a successful build
 as proof that it boots or controls the fan, and do not make it a deployment
 wizard default until it passes a Raspberry Pi 5 hardware test. See

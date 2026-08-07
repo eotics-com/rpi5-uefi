@@ -1,7 +1,7 @@
 /**
  * Experimental Raspberry Pi 5 Active Cooler KMDF driver.
  *
- * This driver binds only to the ACPI\\RPI0FAN device published by the
+ * This driver binds only to the ACPI\\RPI000F device published by the
  * companion UEFI patch. Every error path requests the maximum supported fan
  * duty before returning.
  *
