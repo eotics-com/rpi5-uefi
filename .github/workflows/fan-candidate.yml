@@ -71,9 +71,11 @@ jobs:
         with:
           name: RPi5Fan_ARM64_experimental
           path: |
-            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.sys
-            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.inf
-            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.cat
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/Rpi5Fan.sys
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/Rpi5Fan.inf
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/rpi5fan.cat
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.cer
+            WindowsDriver/Rpi5Fan/README.md
             THIRD_PARTY_NOTICES.md
             LICENSES/Soulveig-BSD-2-Clause-Patent.txt
           if-no-files-found: error
