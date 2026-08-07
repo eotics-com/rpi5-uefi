@@ -691,10 +691,10 @@ index 671ec77fa7121119c56f5f538b6e1acd72b547b6..b683aba7d6f83d3dba2faecec9cdbb08
    MdePkg/MdePkg.dec
 diff --git a/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..870530306274f97199f3dcf6dbaf2213f7ef46e7
+index 0000000000000000000000000000000000000000..318e723f1f79f565d32d34fdf34cae161eb3abd0
 --- /dev/null
 +++ b/Silicon/RaspberryPi/RpiSiliconPkg/Drivers/Rp1BusDxe/Rp1Fan.c
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,201 @@
 +/** @file
 + *  RP1 PWM1 channel 3 control for the Raspberry Pi 5 cooling-fan header.
 + *
@@ -709,6 +709,8 @@ index 0000000000000000000000000000000000000000..870530306274f97199f3dcf6dbaf2213
 +#include <Uefi.h>
 +#include <Library/DebugLib.h>
 +#include <Library/IoLib.h>
++#include <Protocol/ComponentName.h>
++#include <Protocol/ComponentName2.h>
 +#include <Rp1.h>
 +
 +#include "Rp1BusDxe.h"

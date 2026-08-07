@@ -49,29 +49,6 @@ jobs:
             /p:TargetPlatformVersion=10.0.26100.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # WDK 26100 ships VS17-named host tasks. windows-latest currently
-          # uses MSBuild 18, whose WDK targets request the host-major filename.
-          $wdkBin = Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.wdk.arm64\10.0.26100.6584\c\build\10.0.26100.0\bin'
-          $msbuildVersion = (& msbuild -version -nologo |
-            Where-Object { $_ -match '^\d+\.' } |
-            Select-Object -Last 1).Trim()
-          $hostTaskVersion = "$(([version]$msbuildVersion).Major).0"
-          foreach ($baseName in @(
-            'Microsoft.DriverKit.Build.Tasks',
-            'Microsoft.DriverKit.Build.Tasks.PackageVerifier'
-          )) {
-            $target = Join-Path $wdkBin "$baseName.$hostTaskVersion.dll"
-            if (-not (Test-Path -LiteralPath $target)) {
-              $source = Get-ChildItem -LiteralPath $wdkBin -Filter "$baseName.*.dll" |
-                Sort-Object Name -Descending |
-                Select-Object -First 1
-              if ($null -eq $source) {
-                throw "No compatible WDK host task found for $baseName"
-              }
-              Copy-Item -LiteralPath $source.FullName -Destination $target
-            }
-          }
-
           msbuild $solution `
             /m `
             /p:Configuration=Release `

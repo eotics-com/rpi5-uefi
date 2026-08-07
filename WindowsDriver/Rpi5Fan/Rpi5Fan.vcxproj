@@ -66,6 +66,13 @@
   </ItemGroup>
   <ItemGroup><ClInclude Include="Rpi5Fan.h" /><ClInclude Include="FanCurve.h" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <PropertyGroup>
+    <Rpi5HostVisualStudioVersion>$(VisualStudioVersion)</Rpi5HostVisualStudioVersion>
+    <VisualStudioVersion>17.0</VisualStudioVersion>
+  </PropertyGroup>
   <Import Project="$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Common.targets"
           Condition="Exists('$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Common.targets')" />
+  <PropertyGroup>
+    <VisualStudioVersion>$(Rpi5HostVisualStudioVersion)</VisualStudioVersion>
+  </PropertyGroup>
 </Project>
