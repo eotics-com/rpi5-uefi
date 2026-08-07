@@ -39,6 +39,7 @@ jobs:
         uses: microsoft/setup-msbuild@v3
         with:
           vs-version: '[17.0,18.0)'
+          msbuild-architecture: x64
 
       - name: Restore WDK NuGet package and build ARM64 driver
         shell: pwsh
