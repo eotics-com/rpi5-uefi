@@ -147,6 +147,26 @@ Build a Debug image:
 
 The result is `RPI_EFI.fd`. Run `./build.sh --help` for the remaining options.
 
+## Experimental Windows fan candidate
+
+The `fan-persistent-windows-driver` development branch carries a modular UEFI
+patch and an experimental ARM64 KMDF driver for the official Raspberry Pi 5
+Active Cooler. The UEFI setup default is **Manual (Persistent), 100%**, so the
+fan remains at its fail-safe speed after Windows starts. When the test-signed
+driver is installed, Windows reads the SoC temperature and applies the selected
+curve automatically. Any temperature, mailbox, power, or unload failure requests
+100% fan.
+
+The firmware fan modules adapt work from Soulveig's Raspberry Pi 5 UEFI fan
+implementation. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and the
+retained license text in `LICENSES/`.
+
+This candidate has not been physically tested. Do not treat a successful build
+as proof that it boots or controls the fan, and do not make it a deployment
+wizard default until it passes a Raspberry Pi 5 hardware test. See
+[`WindowsDriver/Rpi5Fan/README.md`](WindowsDriver/Rpi5Fan/README.md) for the
+driver-specific safety and signing notes.
+
 ## Licenses
 
 Most files use the EDK2

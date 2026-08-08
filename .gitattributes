@@ -1,0 +1,2 @@
+# Patch payloads may intentionally contain CRLF hunks for CRLF-tracked sources.
+temporary-patches/**/*.patch whitespace=-trailing-space

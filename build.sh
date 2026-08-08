@@ -131,8 +131,14 @@ export PACKAGES_PATH=${WORKSPACE}/edk2:${WORKSPACE}/edk2-platforms:${WORKSPACE}/
 
 EDK2_SD_PATCH="${WORKSPACE}/temporary-patches/edk2/0001-MdeModulePkg-SdMmcPciHcDxe-Add-platform-signaling-vo.patch"
 EDK2_SD_PATCH_APPLIED=0
+EDK2_PLATFORMS_FAN_PATCH="${WORKSPACE}/temporary-patches/edk2-platforms/0001-RPi5-add-fail-safe-fan-control-and-ACPI-interface.patch"
+EDK2_PLATFORMS_FAN_PATCH_APPLIED=0
 
 restore_edk2_sd_patch() {
+    if [[ "${EDK2_PLATFORMS_FAN_PATCH_APPLIED}" -eq 1 ]]; then
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --reverse "${EDK2_PLATFORMS_FAN_PATCH}"
+        echo "Restored clean edk2-platforms worktree"
+    fi
     if [[ "${EDK2_SD_PATCH_APPLIED}" -eq 1 ]]; then
         git -C "${WORKSPACE}/edk2" apply --reverse "${EDK2_SD_PATCH}"
         echo "Restored clean edk2 worktree"
@@ -149,6 +155,18 @@ if [[ "${MODEL}" == "5" ]]; then
         echo "Temporary RPi5 SD signaling patch is already applied"
     else
         echo "Temporary RPi5 SD signaling patch does not apply to this edk2 revision" >&2
+        exit 1
+    fi
+
+    if git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change "${EDK2_PLATFORMS_FAN_PATCH}"
+        EDK2_PLATFORMS_FAN_PATCH_APPLIED=1
+        echo "Applied experimental RPi5 fail-safe fan patch"
+    elif git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --reverse --check "${EDK2_PLATFORMS_FAN_PATCH}" 2>/dev/null; then
+        echo "Experimental RPi5 fail-safe fan patch is already applied"
+    else
+        echo "Experimental RPi5 fan patch does not apply to this edk2-platforms revision" >&2
+        git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --check --verbose "${EDK2_PLATFORMS_FAN_PATCH}" >&2 || true
         exit 1
     fi
 fi

@@ -124,4 +124,6 @@ jobs:
             *.dtb
             SOURCE_REVISIONS.txt
             SHA256SUMS
+            THIRD_PARTY_NOTICES.md
+            LICENSES/Soulveig-BSD-2-Clause-Patent.txt
           if-no-files-found: error

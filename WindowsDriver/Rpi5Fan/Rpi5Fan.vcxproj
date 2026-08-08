@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|ARM64"><Configuration>Debug</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64"><Configuration>Release</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{DC441E68-8624-43C1-A35F-66C70C6D7505}</ProjectGuid>
+    <RootNamespace>Rpi5Fan</RootNamespace>
+    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
+    <Configuration Condition="'$(Configuration)'==''">Debug</Configuration>
+    <Platform Condition="'$(Platform)'==''">ARM64</Platform>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <TargetVersion>Windows10</TargetVersion><UseDebugLibraries>True</UseDebugLibraries>
+    <DriverTargetPlatform>Windows Driver</DriverTargetPlatform><DriverType>KMDF</DriverType>
+    <PlatformToolset>v143</PlatformToolset><ConfigurationType>Driver</ConfigurationType>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <TargetVersion>Windows10</TargetVersion><UseDebugLibraries>False</UseDebugLibraries>
+    <DriverTargetPlatform>Windows Driver</DriverTargetPlatform><DriverType>KMDF</DriverType>
+    <PlatformToolset>v143</PlatformToolset><ConfigurationType>Driver</ConfigurationType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <Rpi5Arm64WdkRoot>$(NuGetPackageRoot)microsoft.windows.wdk.arm64\10.0.26100.6584\c\</Rpi5Arm64WdkRoot>
+    <Rpi5SdkRoot>$(NuGetPackageRoot)microsoft.windows.sdk.cpp\10.0.26100.1\c\</Rpi5SdkRoot>
+    <Rpi5Arm64SdkLibRoot>$(NuGetPackageRoot)microsoft.windows.sdk.cpp.arm64\10.0.26100.1\c\um\arm64\</Rpi5Arm64SdkLibRoot>
+    <WDKContentRoot>$(Rpi5Arm64WdkRoot)</WDKContentRoot>
+    <WindowsSdkDir>$(Rpi5SdkRoot)</WindowsSdkDir>
+    <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <NuGetTargetMoniker>native,Version=v0.0</NuGetTargetMoniker>
+    <NuGetRuntimeIdentifier>win-arm64</NuGetRuntimeIdentifier>
+    <IsKernelModeToolset>true</IsKernelModeToolset>
+    <WDKBuildFolder>10.0.26100.0</WDKBuildFolder>
+    <DDKPlatform>arm64</DDKPlatform>
+    <KMDF_VERSION_MINOR>33</KMDF_VERSION_MINOR>
+    <CRT_IncludePath>$(Rpi5SdkRoot)Include\$(WDKBuildFolder)\ucrt</CRT_IncludePath>
+    <KM_IncludePath>$(Rpi5Arm64WdkRoot)Include\$(WDKBuildFolder)\km</KM_IncludePath>
+    <KIT_SHARED_IncludePath>$(Rpi5SdkRoot)Include\$(WDKBuildFolder)\shared</KIT_SHARED_IncludePath>
+    <KIT_SHARED_INC_PATH_WDK>$(Rpi5Arm64WdkRoot)Include\$(WDKBuildFolder)\shared</KIT_SHARED_INC_PATH_WDK>
+    <DDK_LibraryPath_DDKPlatform>$(Rpi5Arm64WdkRoot)Lib\$(WDKBuildFolder)\km\ARM64</DDK_LibraryPath_DDKPlatform>
+    <DDK_LIB_PATH>$(DDK_LibraryPath_DDKPlatform)\</DDK_LIB_PATH>
+    <KMDF_INC_PATH>$(Rpi5Arm64WdkRoot)Include\wdf\kmdf\</KMDF_INC_PATH>
+    <KMDF_LIB_PATH>$(Rpi5Arm64WdkRoot)Lib\wdf\kmdf\ARM64\</KMDF_LIB_PATH>
+    <LibraryPath>$(DDK_LibraryPath_DDKPlatform);$(KMDF_LIB_PATH)1.33;$(Rpi5Arm64SdkLibRoot)</LibraryPath>
+  </PropertyGroup>
+  <Import Project="$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Default.props"
+          Condition="Exists('$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Default.props')" />
+  <Import Project="$(WDKContentRoot)build\$(WDKBuildFolder)\ARM64\ImportAfter\WDK.arm64.WindowsKernelModeDriver.Platform.props"
+          Condition="Exists('$(WDKContentRoot)build\$(WDKBuildFolder)\ARM64\ImportAfter\WDK.arm64.WindowsKernelModeDriver.Platform.props')" />
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\bin\</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Platform)\$(Configuration)\</OutputPath>
+    <OutDir>$(OutputPath)</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\obj\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>Rpi5Fan</TargetName>
+  </PropertyGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+  </ImportGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError><ExceptionHandling /></ClCompile>
+    <DriverSign><FileDigestAlgorithm>sha256</FileDigestAlgorithm></DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="Driver.c" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.WDK.ARM64" Version="10.0.26100.6584" />
+    <PackageReference Include="Microsoft.Windows.WDK.x64" Version="10.0.26100.6584" />
+    <PackageReference Include="Microsoft.Windows.SDK.CPP.arm64" Version="10.0.26100.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.CPP.x64" Version="10.0.26100.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Exclude="@(Inf)" Include="Rpi5Fan.inx" />
+    <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver'" />
+  </ItemGroup>
+  <ItemGroup><ClInclude Include="Rpi5Fan.h" /><ClInclude Include="FanCurve.h" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <PropertyGroup>
+    <VisualStudioVersion>17.0</VisualStudioVersion>
+  </PropertyGroup>
+  <Import Project="$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Common.targets"
+          Condition="Exists('$(WDKContentRoot)build\$(WDKBuildFolder)\WindowsDriver.Common.targets')" />
+</Project>

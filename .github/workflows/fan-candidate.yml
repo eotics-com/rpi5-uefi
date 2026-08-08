@@ -1,0 +1,81 @@
+name: Experimental fan candidate
+
+on:
+  push:
+    branches:
+      - fan-persistent-windows-driver
+  pull_request:
+    paths:
+      - 'WindowsDriver/Rpi5Fan/**'
+      - 'temporary-patches/edk2-platforms/**'
+      - 'build.sh'
+      - '.github/workflows/fan-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  curve-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Compile and test the platform-independent curve
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            WindowsDriver/Rpi5Fan/tests/FanCurveTests.c \
+            -o fan-curve-tests
+          ./fan-curve-tests
+
+  uefi:
+    uses: ./.github/workflows/build.yml
+
+  windows-driver:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v3
+        with:
+          vs-version: '[17.0,18.0)'
+          msbuild-architecture: x64
+
+      - name: Restore WDK NuGet package and build ARM64 driver
+        shell: pwsh
+        run: |
+          $solution = 'WindowsDriver\Rpi5Fan\Rpi5Fan.sln'
+          msbuild $solution `
+            /t:Restore `
+            /p:Configuration=Release `
+            /p:Platform=ARM64 `
+            /p:TargetPlatformVersion=10.0.26100.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          msbuild $solution `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=ARM64 `
+            /p:TargetPlatformVersion=10.0.26100.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate driver INF
+        shell: pwsh
+        run: |
+          $infverif = Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.wdk.x64\10.0.26100.6584\c\tools\10.0.26100.0\x64\infverif.exe'
+          & $infverif /w WindowsDriver\Rpi5Fan\bin\ARM64\Release\Rpi5Fan.inf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload unsigned/test-signed candidate package
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: RPi5Fan_ARM64_experimental
+          path: |
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/Rpi5Fan.sys
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/Rpi5Fan.inf
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan/rpi5fan.cat
+            WindowsDriver/Rpi5Fan/bin/ARM64/Release/Rpi5Fan.cer
+            WindowsDriver/Rpi5Fan/README.md
+            THIRD_PARTY_NOTICES.md
+            LICENSES/Soulveig-BSD-2-Clause-Patent.txt
+          if-no-files-found: error
