@@ -133,8 +133,14 @@ EDK2_SD_PATCH="${WORKSPACE}/temporary-patches/edk2/0001-MdeModulePkg-SdMmcPciHcD
 EDK2_SD_PATCH_APPLIED=0
 EDK2_PLATFORMS_FAN_PATCH="${WORKSPACE}/temporary-patches/edk2-platforms/0001-RPi5-add-fail-safe-fan-control-and-ACPI-interface.patch"
 EDK2_PLATFORMS_FAN_PATCH_APPLIED=0
+EDK2_PLATFORMS_SD_POWER_PATCH="${WORKSPACE}/temporary-patches/edk2-platforms/0002-RPi5-keep-microSD-powered-during-UEFI.patch"
+EDK2_PLATFORMS_SD_POWER_PATCH_APPLIED=0
 
 restore_edk2_sd_patch() {
+    if [[ "${EDK2_PLATFORMS_SD_POWER_PATCH_APPLIED}" -eq 1 ]]; then
+        git -C "${WORKSPACE}/edk2-platforms" apply --reverse "${EDK2_PLATFORMS_SD_POWER_PATCH}"
+        echo "Restored RPi5 microSD power patch"
+    fi
     if [[ "${EDK2_PLATFORMS_FAN_PATCH_APPLIED}" -eq 1 ]]; then
         git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --reverse "${EDK2_PLATFORMS_FAN_PATCH}"
         echo "Restored clean edk2-platforms worktree"
@@ -167,6 +173,17 @@ if [[ "${MODEL}" == "5" ]]; then
     else
         echo "Experimental RPi5 fan patch does not apply to this edk2-platforms revision" >&2
         git -C "${WORKSPACE}/edk2-platforms" apply --ignore-space-change --check --verbose "${EDK2_PLATFORMS_FAN_PATCH}" >&2 || true
+        exit 1
+    fi
+
+    if git -C "${WORKSPACE}/edk2-platforms" apply --check "${EDK2_PLATFORMS_SD_POWER_PATCH}" 2>/dev/null; then
+        git -C "${WORKSPACE}/edk2-platforms" apply "${EDK2_PLATFORMS_SD_POWER_PATCH}"
+        EDK2_PLATFORMS_SD_POWER_PATCH_APPLIED=1
+        echo "Applied RPi5 microSD UEFI power patch"
+    elif git -C "${WORKSPACE}/edk2-platforms" apply --reverse --check "${EDK2_PLATFORMS_SD_POWER_PATCH}" 2>/dev/null; then
+        echo "RPi5 microSD UEFI power patch is already applied"
+    else
+        echo "RPi5 microSD UEFI power patch does not apply" >&2
         exit 1
     fi
 fi

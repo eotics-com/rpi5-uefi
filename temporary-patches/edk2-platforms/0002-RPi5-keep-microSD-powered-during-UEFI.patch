@@ -1,0 +1,14 @@
+diff --git a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/Peripherals.c b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/Peripherals.c
+--- a/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/Peripherals.c
++++ b/Platform/RaspberryPi/RPi5/Drivers/RpiPlatformDxe/Peripherals.c
+@@ -70,8 +70,8 @@ InitGpioPinctrls (
+   GpioSetFunction (BCM2712_GIO_AON, 5, GIO_AON_PIN5_ALT_SD_CARD_G);
+   GpioSetPull (BCM2712_GIO_AON, 5, BCM2712_GPIO_PIN_PULL_UP);
+
+-  // ACPI owns the microSD power rail and starts with it off.
+-  GpioWrite (BCM2712_GIO_AON, 4, FALSE);
++  // Keep microSD powered during UEFI so firmware can enumerate and boot from it.
++  GpioWrite (BCM2712_GIO_AON, 4, TRUE);
+   GpioSetDirection (BCM2712_GIO_AON, 4, BCM2712_GPIO_PIN_OUTPUT);
+
+   // Default the microSD signaling voltage to 3.3 V.
