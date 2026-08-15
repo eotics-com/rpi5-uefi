@@ -47,13 +47,13 @@ hardware, while the operating system still needs a suitable driver.
 | HDMI framebuffer | Working | Display is provided by the VideoCore firmware. Use a current Raspberry Pi EEPROM on D0 boards. |
 | RP1 USB | Working | Both xHCI controllers are initialized and exposed through ACPI. |
 | PCIe and NVMe | Working | Gen 2 is the default; Gen 3 can be selected in setup. |
-| microSD | Working | UEFI supports modes up to SDR104. ACPI power and voltage switching are included; the final speed depends on the OS driver. |
+| microSD | Unknown | UEFI supports modes up to SDR104. ACPI power and voltage switching are included; the final speed depends on the OS driver. |
 | RP1 Ethernet | **Working after OS hand-off** | The GEM/PHY is initialized, the MAC address is programmed, and ACPI exposes a Cadence GEM-compatible device. A matching OS driver is required; UEFI PXE is not provided. |
 | SDIO Wi-Fi | Partial | The host and power resource are described in ACPI. The OS still needs the CYW43455 driver and firmware. |
 | VideoCore VII | Partial | Mailbox, clock and memory resources are described in ACPI. 3D acceleration remains an OS-driver concern. |
 | UART | Working | PL011 on the dedicated connector at `115200 8n1`. |
 | RTC and RNG | Working | RTC time/alarm and the hardware random-number source are available. |
-| CM5 eMMC | Not confirmed | Use NVMe or USB when dependable eMMC boot is required. |
+| CM5 eMMC | Unknown | Use NVMe or USB when dependable eMMC boot is required. |
 | RP1 GPIO and PWM | Not exposed | There are no general-purpose ACPI devices for these blocks yet. |
 | Persistent UEFI variables | Limited | EEPROM-backed NVRAM is not implemented. |
 
