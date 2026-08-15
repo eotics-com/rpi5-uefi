@@ -22,4 +22,9 @@ build -a AARCH64 -t GCC -b "$BUILD_TYPE" \
 
 echo "=== BUILD DONE: $BUILD_TYPE ==="
 FD="Build/RPi5/${BUILD_TYPE}_GCC/FV/RPI_EFI.fd"
-ls -la "$FD" 2>/dev/null && echo "FD PRODUCED: $FD" || echo "NO FD"
+if [[ ! -f "$FD" ]]; then
+  echo "NO FD: $FD" >&2
+  exit 1
+fi
+ls -la "$FD"
+echo "FD PRODUCED: $FD"
