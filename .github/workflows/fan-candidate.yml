@@ -59,12 +59,37 @@ jobs:
             /p:TargetPlatformVersion=10.0.26100.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Normalize signed driver package
+        shell: pwsh
+        run: |
+          $releaseRoot = 'WindowsDriver\Rpi5Fan\bin\ARM64\Release'
+          $driverDir = Join-Path $releaseRoot 'Rpi5Fan'
+          $certificate = Join-Path $releaseRoot 'Rpi5Fan.cer'
+          if (-not (Test-Path -LiteralPath $certificate)) {
+            throw "WDK did not export the test certificate: $certificate"
+          }
+          Copy-Item -LiteralPath $certificate -Destination (Join-Path $driverDir 'Rpi5Fan.cer') -Force
+          foreach ($name in 'Rpi5Fan.inf','Rpi5Fan.sys','rpi5fan.cat','Rpi5Fan.cer') {
+            $path = Join-Path $driverDir $name
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Incomplete driver package: $path"
+            }
+          }
+
       - name: Validate driver INF
         shell: pwsh
         run: |
+          $infPath = 'WindowsDriver\Rpi5Fan\bin\ARM64\Release\Rpi5Fan\Rpi5Fan.inf'
           $infverif = Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.wdk.x64\10.0.26100.6584\c\tools\10.0.26100.0\x64\infverif.exe'
-          & $infverif /w WindowsDriver\Rpi5Fan\bin\ARM64\Release\Rpi5Fan.inf
+          & $infverif /w $infPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $infText = Get-Content -LiteralPath $infPath -Raw
+          if ($infText -notmatch 'DriverVer=08/17/2026,0\.1\.1\.0') {
+            throw 'Generated INF DriverVer is not pinned to 08/17/2026,0.1.1.0.'
+          }
+          if ($infText -notmatch 'NTARM64' -or $infText -notmatch 'ACPI\\RPI000F') {
+            throw 'Generated INF does not match ARM64 ACPI\RPI000F.'
+          }
 
       - name: Validate passive timer fix
         shell: pwsh
@@ -91,7 +116,6 @@ jobs:
             -DriverDir $driverDir `
             -InstallerScript 'WindowsDriver\Rpi5Fan\Install-RPi5Fan.ps1' `
             -OutputPath (Join-Path $releaseDir 'Install_RPi5Fan_OneShot.cmd')
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $installer = Get-Item (Join-Path $releaseDir 'Install_RPi5Fan_OneShot.cmd')
           if ($installer.Length -lt 10000) {
@@ -174,7 +198,7 @@ jobs:
           ### Fixed in v0.1.1
           - Replaces the invalid periodic passive-level KMDF timer with a re-armed one-shot passive timer.
           - Adds timer lifecycle state across D0 power transitions to prevent re-arming during stop/suspend.
-          - Bumps the Windows driver version to `0.1.1.0` so Windows can update the previous package.
+          - Pins Windows `DriverVer` to `08/17/2026,0.1.1.0` so Windows can reliably update the previous package.
           - Adds a self-contained one-shot installer with automatic certificate installation, PnP rescan/restart, final device verification, and `Desktop\\RPi5Fan-install.log` diagnostics.
 
           This specifically targets the observed Device Manager **Code 31** / `STATUS_NOT_SUPPORTED (0xC00000BB)` failure from the previous experimental driver.
