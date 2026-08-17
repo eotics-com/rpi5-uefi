@@ -50,7 +50,7 @@ try {
     if ($infText -notmatch 'ACPI\\RPI000F' -or $infText -notmatch 'NTARM64') {
         throw 'INF does not advertise the expected ARM64 ACPI\RPI000F match.'
     }
-    if ($infText -notmatch 'DriverVer=08/17/2026,0\.1\.1\.0') {
+    if ($infText -notmatch 'DriverVer\s*=\s*08/17/2026\s*,\s*0\.1\.1\.0') {
         throw 'Unexpected driver version. Expected 0.1.1.0.'
     }
     Write-Host 'OK: INF hardware, architecture, and v0.1.1 version verified.'
