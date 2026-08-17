@@ -29,6 +29,13 @@ checks for `ACPI\\RPI000F`, verifies test-signing, installs the included test
 certificate, installs/updates the driver, rescans/restarts the device, and checks
 the final PnP state.
 
+Use **experimental release exp.2 or later**. The exp.1 wrapper could report
+`Embedded payload not found` because its payload boundary relied on whole-file
+regex splitting. The corrected wrapper uses a dedicated standalone payload
+marker line. CI now decodes and expands the generated one-shot installer and
+verifies the embedded `Rpi5Fan.sys` against the verified ARM64 build before a
+release can be published.
+
 The installer writes a persistent diagnostic transcript to
 `Desktop\\RPi5Fan-install.log`. If the final device state is not healthy, it also
 adds matching SetupAPI diagnostics to the same log.
