@@ -84,7 +84,7 @@ jobs:
           & $infverif /w $infPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $infText = Get-Content -LiteralPath $infPath -Raw
-          if ($infText -notmatch 'DriverVer=08/17/2026,0\.1\.1\.0') {
+          if ($infText -notmatch 'DriverVer\s*=\s*08/17/2026\s*,\s*0\.1\.1\.0') {
             throw 'Generated INF DriverVer is not pinned to 08/17/2026,0.1.1.0.'
           }
           if ($infText -notmatch 'NTARM64' -or $infText -notmatch 'ACPI\\RPI000F') {
