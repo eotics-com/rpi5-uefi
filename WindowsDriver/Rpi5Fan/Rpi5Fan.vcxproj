@@ -77,7 +77,7 @@
       <SpecifyDriverVerDirectiveDate>true</SpecifyDriverVerDirectiveDate>
       <DateStamp>08/17/2026</DateStamp>
       <SpecifyDriverDirectiveVersion>true</SpecifyDriverDirectiveVersion>
-      <TimeStamp>0.1.1.0</TimeStamp>
+      <TimeStamp>2026.8.17.3</TimeStamp>
     </Inf>
     <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver'" />
   </ItemGroup>
