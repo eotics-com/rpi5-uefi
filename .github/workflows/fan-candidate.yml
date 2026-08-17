@@ -76,7 +76,7 @@ jobs:
             }
           }
 
-      - name: Validate driver INF
+      - name: Validate driver INF and installer recovery logic
         shell: pwsh
         run: |
           $infPath = 'WindowsDriver\Rpi5Fan\bin\ARM64\Release\Rpi5Fan\Rpi5Fan.inf'
@@ -84,11 +84,22 @@ jobs:
           & $infverif /w $infPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $infText = Get-Content -LiteralPath $infPath -Raw
-          if ($infText -notmatch 'DriverVer\s*=\s*08/17/2026\s*,\s*0\.1\.1\.0') {
-            throw 'Generated INF DriverVer is not pinned to 08/17/2026,0.1.1.0.'
+          if ($infText -notmatch 'DriverVer\s*=\s*08/17/2026\s*,\s*2026\.8\.17\.3') {
+            throw 'Generated INF DriverVer is not pinned to 08/17/2026,2026.8.17.3.'
           }
           if ($infText -notmatch 'NTARM64' -or $infText -notmatch 'ACPI\\RPI000F') {
             throw 'Generated INF does not match ARM64 ACPI\RPI000F.'
+          }
+
+          $installerSource = Get-Content 'WindowsDriver\Rpi5Fan\Install-RPi5Fan.ps1' -Raw
+          if ($installerSource -notmatch "ExpectedDriverVersion = '2026\.8\.17\.3'") {
+            throw 'Installer expected DriverVer is not synchronized with the generated INF.'
+          }
+          if ($installerSource -notmatch 'ExitCode -eq 259') {
+            throw 'Installer does not contain explicit PnPUtil ERROR_NO_MORE_ITEMS handling.'
+          }
+          if ($installerSource -notmatch 'DEVPKEY_Device_DriverInfPath' -or $installerSource -notmatch 'DEVPKEY_Device_DriverVersion') {
+            throw 'Installer does not inspect the selected INF/version before stale-package recovery.'
           }
 
       - name: Validate passive timer fix
@@ -122,8 +133,6 @@ jobs:
             throw 'Generated one-shot installer is unexpectedly small.'
           }
 
-          # Decode the generated CMD exactly as the Windows wrapper will. This
-          # prevents publishing another installer with a malformed marker boundary.
           $lines = [IO.File]::ReadAllLines($installer.FullName)
           $markers = @()
           for ($i = 0; $i -lt $lines.Length; ++$i) {
@@ -227,23 +236,24 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          ## Raspberry Pi 5 Active Cooler Windows driver v0.1.1 - installer fix 2
+          ## Raspberry Pi 5 Active Cooler Windows driver v0.1.1 - experimental 3
 
           Experimental ARM64 KMDF driver for the `ACPI\\RPI000F` fan device published by the companion RPi5 UEFI fan patch.
 
-          ### Driver fixes in v0.1.1
-          - Replaces the invalid periodic passive-level KMDF timer with a re-armed one-shot passive timer.
-          - Adds timer lifecycle state across D0 power transitions to prevent re-arming during stop/suspend.
-          - Pins Windows `DriverVer` to `08/17/2026,0.1.1.0` so Windows can reliably update the previous package.
+          ### Driver fix
+          - Keeps the v0.1.1 passive-timer fix for the observed Code 31 / `STATUS_NOT_SUPPORTED (0xC00000BB)` failure.
+          - Uses Windows `DriverVer=08/17/2026,2026.8.17.3` so this package outranks earlier experimental packages that were automatically timestamp-stamped by WDK with numerically higher versions than `0.1.1.0`.
 
-          ### Installer fix in exp.2
-          - Fixes `Embedded payload not found` from the exp.1 one-shot wrapper.
-          - Uses a standalone payload marker line instead of regex-splitting the entire CMD file.
-          - CI now decodes and expands the generated embedded ZIP and verifies that its `Rpi5Fan.sys` exactly matches the verified ARM64 build before publishing.
-          - Keeps automatic certificate installation, PnP rescan/restart, final device verification, and `Desktop\\RPi5Fan-install.log` diagnostics.
+          ### Installer fixes in exp.3
+          - Handles PnPUtil return code `259` (`ERROR_NO_MORE_ITEMS`) instead of treating it as an immediate fatal error.
+          - Reads the currently selected `DEVPKEY_Device_DriverInfPath`, `DEVPKEY_Device_DriverVersion`, and provider.
+          - If Windows is still selecting a recognized older RPi5Fan `oem*.inf`, the installer removes only that stale package, rescans PnP, and retries the verified driver installation.
+          - Verifies that Windows ultimately selected DriverVer `2026.8.17.3` before evaluating the final device state.
+          - Keeps the exp.2 standalone embedded-payload format and CI decode/hash verification.
+          - Keeps `Desktop\\RPi5Fan-install.log` plus automatic SetupAPI diagnostics on a final device error.
 
           ### Install
-          Download **`Install_RPi5Fan_OneShot.cmd`** from this exp.2 release and run it. It will request Administrator privileges automatically.
+          Download **`Install_RPi5Fan_OneShot.cmd`** from this exp.3 release and run it. It requests Administrator privileges automatically.
 
           Windows test-signing is still required because this is a test-signed experimental driver. If the installer has to enable test-signing, reboot and run the same installer again.
 
@@ -254,9 +264,9 @@ jobs:
       - name: Publish experimental fan driver release
         uses: softprops/action-gh-release@v3.0.2
         with:
-          tag_name: rpi5fan-v0.1.1-exp.2
+          tag_name: rpi5fan-v0.1.1-exp.3
           target_commitish: ${{ github.sha }}
-          name: RPi5 Fan Driver v0.1.1 experimental 2
+          name: RPi5 Fan Driver v0.1.1 experimental 3
           body_path: release-notes.md
           draft: false
           prerelease: true
