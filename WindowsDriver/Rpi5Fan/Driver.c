@@ -216,12 +216,17 @@ FanEvtTimer(_In_ WDFTIMER Timer)
     UCHAR percent = FAN_FAILSAFE_PERCENT;
 
     WdfWaitLockAcquire(context->Lock, NULL);
-    if (context->HardwareReady &&
-        FanReadTemperature(context, &temperature)) {
-        percent = FanCurvePercent(temperature, context->CurrentPercent);
-    }
-    if (context->HardwareReady && percent != context->CurrentPercent) {
-        (void)FanSetPercent(context, percent);
+    if (context->TimerEnabled && context->HardwareReady) {
+        if (FanReadTemperature(context, &temperature)) {
+            percent = FanCurvePercent(temperature, context->CurrentPercent);
+        }
+        if (percent != context->CurrentPercent) {
+            (void)FanSetPercent(context, percent);
+        }
+        if (context->TimerEnabled && context->HardwareReady) {
+            WdfTimerStart(context->Timer,
+                          WDF_REL_TIMEOUT_IN_MS(FAN_TIMER_MS));
+        }
     }
     WdfWaitLockRelease(context->Lock);
 }
@@ -289,6 +294,7 @@ FanEvtPrepareHardware(_In_ WDFDEVICE Device,
     }
     context->MessagePhysical = MmGetPhysicalAddress(context->Message);
     context->CurrentPercent = 0xff;
+    context->TimerEnabled = FALSE;
     context->HardwareReady = TRUE;
     return STATUS_SUCCESS;
 }
@@ -300,7 +306,11 @@ FanEvtReleaseHardware(_In_ WDFDEVICE Device,
     PFAN_DEVICE_CONTEXT context = FanGetContext(Device);
     UNREFERENCED_PARAMETER(ResourcesTranslated);
 
+    WdfWaitLockAcquire(context->Lock, NULL);
+    context->TimerEnabled = FALSE;
+    WdfWaitLockRelease(context->Lock);
     WdfTimerStop(context->Timer, TRUE);
+
     WdfWaitLockAcquire(context->Lock, NULL);
     if (context->HardwareReady) {
         (void)FanSetPercent(context, FAN_FAILSAFE_PERCENT);
@@ -325,10 +335,12 @@ FanEvtD0Entry(_In_ WDFDEVICE Device,
 
     WdfWaitLockAcquire(context->Lock, NULL);
     status = FanSetPercent(context, FAN_FAILSAFE_PERCENT);
-    WdfWaitLockRelease(context->Lock);
     if (NT_SUCCESS(status)) {
-        WdfTimerStart(context->Timer, WDF_REL_TIMEOUT_IN_MS(FAN_TIMER_MS));
+        context->TimerEnabled = TRUE;
+        WdfTimerStart(context->Timer,
+                      WDF_REL_TIMEOUT_IN_MS(FAN_TIMER_MS));
     }
+    WdfWaitLockRelease(context->Lock);
     return status;
 }
 
@@ -339,12 +351,13 @@ FanEvtD0Exit(_In_ WDFDEVICE Device,
     PFAN_DEVICE_CONTEXT context = FanGetContext(Device);
     UNREFERENCED_PARAMETER(TargetState);
 
-    WdfTimerStop(context->Timer, TRUE);
     WdfWaitLockAcquire(context->Lock, NULL);
+    context->TimerEnabled = FALSE;
     if (context->HardwareReady) {
         (void)FanSetPercent(context, FAN_FAILSAFE_PERCENT);
     }
     WdfWaitLockRelease(context->Lock);
+    WdfTimerStop(context->Timer, TRUE);
     return STATUS_SUCCESS;
 }
 
@@ -377,7 +390,7 @@ FanEvtDeviceAdd(_In_ WDFDRIVER Driver,
     status = WdfWaitLockCreate(WDF_NO_OBJECT_ATTRIBUTES, &context->Lock);
     if (!NT_SUCCESS(status)) return status;
 
-    WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, FanEvtTimer, FAN_TIMER_MS);
+    WDF_TIMER_CONFIG_INIT(&timerConfig, FanEvtTimer);
     timerConfig.AutomaticSerialization = FALSE;
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     attributes.ParentObject = device;
