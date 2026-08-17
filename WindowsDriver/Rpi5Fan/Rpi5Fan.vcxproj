@@ -73,7 +73,12 @@
     <PackageReference Include="Microsoft.Windows.SDK.CPP.x64" Version="10.0.26100.1" />
   </ItemGroup>
   <ItemGroup>
-    <Inf Exclude="@(Inf)" Include="Rpi5Fan.inx" />
+    <Inf Exclude="@(Inf)" Include="Rpi5Fan.inx">
+      <SpecifyDriverVerDirectiveDate>true</SpecifyDriverVerDirectiveDate>
+      <DateStamp>08/17/2026</DateStamp>
+      <SpecifyDriverDirectiveVersion>true</SpecifyDriverDirectiveVersion>
+      <TimeStamp>0.1.1.0</TimeStamp>
+    </Inf>
     <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver'" />
   </ItemGroup>
   <ItemGroup><ClInclude Include="Rpi5Fan.h" /><ClInclude Include="FanCurve.h" /></ItemGroup>
