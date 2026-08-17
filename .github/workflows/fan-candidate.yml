@@ -105,7 +105,7 @@ jobs:
             throw 'Expected timer lifecycle guard was not found.'
           }
 
-      - name: Build one-shot installer and release package
+      - name: Build and decode-test one-shot installer
         shell: pwsh
         run: |
           $driverDir = 'WindowsDriver\Rpi5Fan\bin\ARM64\Release\Rpi5Fan'
@@ -121,10 +121,46 @@ jobs:
           if ($installer.Length -lt 10000) {
             throw 'Generated one-shot installer is unexpectedly small.'
           }
-          $installerText = Get-Content $installer.FullName -Raw
-          if ($installerText -notmatch '__RPI5FAN_PAYLOAD__') {
-            throw 'Generated installer does not contain an embedded payload marker.'
+
+          # Decode the generated CMD exactly as the Windows wrapper will. This
+          # prevents publishing another installer with a malformed marker boundary.
+          $lines = [IO.File]::ReadAllLines($installer.FullName)
+          $markers = @()
+          for ($i = 0; $i -lt $lines.Length; ++$i) {
+            if ($lines[$i].Trim() -eq '__RPI5FAN_PAYLOAD__') {
+              $markers += $i
+            }
           }
+          if ($markers.Count -ne 1) {
+            throw "Expected exactly one standalone payload marker; found $($markers.Count)."
+          }
+          $marker = $markers[0]
+          if ($marker -ge ($lines.Length - 1)) {
+            throw 'Payload marker has no data after it.'
+          }
+          $b64 = (($lines[($marker + 1)..($lines.Length - 1)]) -join '') -replace '\s',''
+          if ([string]::IsNullOrWhiteSpace($b64)) {
+            throw 'Embedded payload is empty.'
+          }
+
+          $decodedZip = Join-Path $env:RUNNER_TEMP 'rpi5fan-embedded-payload.zip'
+          $decodedDir = Join-Path $env:RUNNER_TEMP 'rpi5fan-embedded-payload'
+          [IO.File]::WriteAllBytes($decodedZip, [Convert]::FromBase64String($b64))
+          Expand-Archive -LiteralPath $decodedZip -DestinationPath $decodedDir -Force
+
+          foreach ($name in 'Rpi5Fan.inf','Rpi5Fan.sys','rpi5fan.cat','Rpi5Fan.cer','Install-RPi5Fan.ps1') {
+            $path = Join-Path $decodedDir $name
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Decoded one-shot payload is missing: $name"
+            }
+          }
+
+          $sourceSys = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $driverDir 'Rpi5Fan.sys')).Hash
+          $embeddedSys = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $decodedDir 'Rpi5Fan.sys')).Hash
+          if ($sourceSys -ne $embeddedSys) {
+            throw 'Embedded Rpi5Fan.sys does not match the verified ARM64 build.'
+          }
+          Write-Host 'One-shot embedded payload decode test passed.'
 
           $packageDir = Join-Path $env:RUNNER_TEMP 'RPi5Fan_ARM64_v0.1.1'
           New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
@@ -142,11 +178,11 @@ jobs:
             -CompressionLevel Optimal
 
           $files = Get-ChildItem $releaseDir -File | Sort-Object Name
-          $lines = foreach ($file in $files) {
+          $hashLines = foreach ($file in $files) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
             "$hash  $($file.Name)"
           }
-          [IO.File]::WriteAllLines((Join-Path $releaseDir 'SHA256SUMS.txt'), $lines)
+          [IO.File]::WriteAllLines((Join-Path $releaseDir 'SHA256SUMS.txt'), $hashLines)
 
           Get-ChildItem $releaseDir | Format-Table Name,Length
           Get-Content (Join-Path $releaseDir 'SHA256SUMS.txt')
@@ -191,22 +227,25 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          ## Raspberry Pi 5 Active Cooler Windows driver v0.1.1
+          ## Raspberry Pi 5 Active Cooler Windows driver v0.1.1 - installer fix 2
 
           Experimental ARM64 KMDF driver for the `ACPI\\RPI000F` fan device published by the companion RPi5 UEFI fan patch.
 
-          ### Fixed in v0.1.1
+          ### Driver fixes in v0.1.1
           - Replaces the invalid periodic passive-level KMDF timer with a re-armed one-shot passive timer.
           - Adds timer lifecycle state across D0 power transitions to prevent re-arming during stop/suspend.
           - Pins Windows `DriverVer` to `08/17/2026,0.1.1.0` so Windows can reliably update the previous package.
-          - Adds a self-contained one-shot installer with automatic certificate installation, PnP rescan/restart, final device verification, and `Desktop\\RPi5Fan-install.log` diagnostics.
 
-          This specifically targets the observed Device Manager **Code 31** / `STATUS_NOT_SUPPORTED (0xC00000BB)` failure from the previous experimental driver.
+          ### Installer fix in exp.2
+          - Fixes `Embedded payload not found` from the exp.1 one-shot wrapper.
+          - Uses a standalone payload marker line instead of regex-splitting the entire CMD file.
+          - CI now decodes and expands the generated embedded ZIP and verifies that its `Rpi5Fan.sys` exactly matches the verified ARM64 build before publishing.
+          - Keeps automatic certificate installation, PnP rescan/restart, final device verification, and `Desktop\\RPi5Fan-install.log` diagnostics.
 
           ### Install
-          Download **`Install_RPi5Fan_OneShot.cmd`** and run it. It will request Administrator privileges automatically.
+          Download **`Install_RPi5Fan_OneShot.cmd`** from this exp.2 release and run it. It will request Administrator privileges automatically.
 
-          Windows test-signing is still required because this is a test-signed experimental driver. If the installer has to enable test-signing, reboot and run the installer again.
+          Windows test-signing is still required because this is a test-signed experimental driver. If the installer has to enable test-signing, reboot and run the same installer again.
 
           ### Safety
           This remains an experimental prerelease and still needs physical Raspberry Pi 5 validation. Keep the UEFI fan setting in a fail-safe configuration until the driver is confirmed healthy on the target board.
@@ -215,9 +254,9 @@ jobs:
       - name: Publish experimental fan driver release
         uses: softprops/action-gh-release@v3.0.2
         with:
-          tag_name: rpi5fan-v0.1.1-exp.1
+          tag_name: rpi5fan-v0.1.1-exp.2
           target_commitish: ${{ github.sha }}
-          name: RPi5 Fan Driver v0.1.1 experimental
+          name: RPi5 Fan Driver v0.1.1 experimental 2
           body_path: release-notes.md
           draft: false
           prerelease: true
