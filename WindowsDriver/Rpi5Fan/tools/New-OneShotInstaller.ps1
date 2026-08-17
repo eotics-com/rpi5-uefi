@@ -33,17 +33,17 @@ try {
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
 title RPi5Fan One Shot Installer v0.1.1
+set "RPI5FAN_SELF=%~f0"
 
 if /I "%~1"=="__elevated" goto :elevated
 net session >nul 2>&1
 if %ERRORLEVEL% EQU 0 goto :elevated
 
 echo Requesting Administrator privileges...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '__elevated' -Verb RunAs"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:RPI5FAN_SELF -ArgumentList '__elevated' -Verb RunAs"
 exit /b
 
 :elevated
-set "RPI5FAN_SELF=%~f0"
 set "RPI5FAN_TMP=%TEMP%\RPi5Fan-OneShot-%RANDOM%-%RANDOM%"
 mkdir "%RPI5FAN_TMP%" >nul 2>&1
 
